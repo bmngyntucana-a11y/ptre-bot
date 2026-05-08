@@ -11,7 +11,8 @@ const client = new Client({
 const CHANNEL_NAME = 'monitorar-alvos';
 
 const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
-const PTRE_WO = 'w0-dmah-slfa-9kmn-8u63';
+
+const PTRE_URL = 'https://ptre.chez.gg/scripts/oglight_import.php';
 
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
@@ -32,29 +33,23 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    if (
-      !message.content.includes('Relatório') &&
-      !message.content.includes('ONLINE provável') &&
-      !message.content.includes('OFFLINE provável')
-    ) {
-      return;
-    }
+    const report = message.content.trim();
 
+    console.log('========================');
     console.log('RELATORIO RECEBIDO');
-    console.log(message.content);
+    console.log(report);
 
     const payload = {
-      w0: PTRE_WO,
+      w0: 'w0-dmah-slfa-9kmn-8u63',
       api_key: PTRE_API_KEY,
-      report: message.content
+      report: report
     };
 
-    console.log('==========================');
+    console.log('========================');
     console.log('PAYLOAD PTRE:');
     console.log(payload);
-    console.log('==========================');
 
-    const response = await fetch('https://ptre.chez.gg/scripts/api/discord', {
+    const response = await fetch(PTRE_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -64,13 +59,13 @@ client.on('messageCreate', async (message) => {
 
     const text = await response.text();
 
-    console.log('==========================');
+    console.log('========================');
     console.log('RESPOSTA PTRE:');
     console.log(text);
-    console.log('==========================');
+    console.log('========================');
 
   } catch (err) {
-    console.error(err);
+    console.error('ERRO:', err);
   }
 });
 
