@@ -10,13 +10,18 @@ const client = new Client({
 
 const CHANNEL_NAME = 'monitorar-alvos';
 
+const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
+
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
+  console.log(`PTRE API: ${PTRE_API_KEY}`);
 });
 
 client.on('messageCreate', async (message) => {
   try {
+
     if (message.author.bot === false) return;
+
     if (!message.content) return;
 
     if (
@@ -39,8 +44,9 @@ client.on('messageCreate', async (message) => {
     console.log(message.content);
     console.log('==============================');
 
-    // AQUI futuramente enviaremos ao PTRE
-    // neste momento ele já captura os relatórios corretamente
+    // FUTURO ENVIO PTRE
+    // API KEY JA CONFIGURADA
+    console.log(`PTRE KEY: ${PTRE_API_KEY}`);
 
   } catch (err) {
     console.error(err);
