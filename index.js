@@ -14,7 +14,7 @@ const CHANNEL_NAME = 'monitorar-alvos';
 const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
 const PTRE_COUNTRY = 'br';
 const PTRE_UNIVERSE = '178';
-const PTRE_VERSION = '0.15.1';
+const PTRE_VERSION = '5.2.2';
 
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
@@ -25,9 +25,9 @@ function extractPlayerID(player) {
   return match ? parseInt(match[1], 10) : 0;
 }
 
-function parsePtreActivities(content) {
+function parseOglightFormat(content) {
   const lines = content.split('\n');
-  const map = new Map();
+  const postData = {};
 
   for (const line of lines) {
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
@@ -43,24 +43,47 @@ function parsePtreActivities(content) {
     const moonID = parseInt(parts[6], 10);
     const playerID = extractPlayerID(player);
 
-    if (!map.has(coord)) {
-      map.set(coord, {
-        playerID: playerID,
+    const [galaxy, system, position] = coord.split(':').map(Number);
+
+    if (!postData[coord]) {
+      postData[coord] = {
         id: planetID,
-        moonID: moonID,
+        player_id: playerID,
+        teamkey: PTRE_TEAM_KEY,
+        mv: false,
         activity: 0,
-        moonActivity: 0,
-        coords: coord
-      });
+        galaxy: galaxy,
+        system: system,
+        position: position,
+        main: false,
+        cdr_total_size: 0
+      };
+
+      if (moonID && moonID > 0) {
+        postData[coord].moon = {
+          id: moonID,
+          activity: 0
+        };
+      }
     }
 
-    const item = map.get(coord);
+    if (type === 'planet') {
+      postData[coord].activity = act;
+    }
 
-    if (type === 'planet') item.activity = act;
-    if (type === 'moon') item.moonActivity = act;
+    if (type === 'moon') {
+      if (!postData[coord].moon) {
+        postData[coord].moon = {
+          id: moonID,
+          activity: 0
+        };
+      }
+
+      postData[coord].moon.activity = act;
+    }
   }
 
-  return Array.from(map.values());
+  return postData;
 }
 
 client.on('messageCreate', async (message) => {
@@ -73,8 +96,12 @@ client.on('messageCreate', async (message) => {
     const content = message.content.trim();
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
-    const activities = parsePtreActivities(content);
-    if (activities.length === 0) return;
+    const postData = parseOglightFormat(content);
+
+    if (Object.keys(postData).length === 0) {
+      console.log('Sem dados válidos para PTRE.');
+      return;
+    }
 
     const params = new URLSearchParams({
       tool: 'oglight',
@@ -86,33 +113,17 @@ client.on('messageCreate', async (message) => {
 
     const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
-    const form = new URLSearchParams();
-
-    for (let i = 0; i < activities.length; i++) {
-      const a = activities[i];
-
-      form.append(`activities[${i}][playerID]`, String(a.playerID));
-      form.append(`activities[${i}][id]`, String(a.id));
-      form.append(`activities[${i}][moonID]`, String(a.moonID));
-      form.append(`activities[${i}][activity]`, String(a.activity));
-      form.append(`activities[${i}][moonActivity]`, String(a.moonActivity));
-      form.append(`activities[${i}][coords]`, a.coords);
-    }
-
     console.log('========================');
     console.log('RELATORIO RECEBIDO');
     console.log(content);
-    console.log('ACTIVITIES ARRAY');
-    console.log(JSON.stringify(activities, null, 2));
-    console.log('FORM');
-    console.log(form.toString());
+    console.log('POSTDATA OGLIGHT');
+    console.log(JSON.stringify(postData, null, 2));
+    console.log('URL');
+    console.log(url);
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: form.toString()
+      body: JSON.stringify(postData)
     });
 
     const text = await response.text();
