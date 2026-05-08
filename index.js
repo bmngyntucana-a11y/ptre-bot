@@ -10,6 +10,10 @@ const client = new Client({
 
 const CHANNEL_NAME = 'monitorar-alvos';
 
+// CHAVE PTRE DISCORD
+const PTRE_W0_KEY = 'w0-dmah-slfa-9kmn-8u63';
+
+// API KEY PTRE
 const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
 
 client.once('ready', () => {
@@ -21,7 +25,6 @@ client.on('messageCreate', async (message) => {
   try {
 
     if (message.author.bot === false) return;
-
     if (!message.content) return;
 
     if (
@@ -45,8 +48,14 @@ client.on('messageCreate', async (message) => {
     console.log('==============================');
 
     // FUTURO ENVIO PTRE
-    // API KEY JA CONFIGURADA
-    console.log(`PTRE KEY: ${PTRE_API_KEY}`);
+    const payload = {
+      w0: PTRE_W0_KEY,
+      api_key: PTRE_API_KEY,
+      report: message.content
+    };
+
+    console.log('PAYLOAD PTRE:');
+    console.log(payload);
 
   } catch (err) {
     console.error(err);
