@@ -44,14 +44,15 @@ async function loadPlayersXml() {
   let match;
 
   while ((match = regex.exec(xml)) !== null) {
-    map[match[2].toLowerCase()] = parseInt(match[1], 10);
+    const id = parseInt(match[1], 10);
+    const name = match[2].toLowerCase();
+    map[name] = id;
   }
 
   playersCache = map;
   playersCacheTime = now;
 
   console.log(`Players carregados: ${Object.keys(playersCache).length}`);
-
   return playersCache;
 }
 
@@ -59,23 +60,24 @@ function cleanPlayerName(rawName) {
   return rawName.replace(/\s*\(\d+\)\s*$/g, '').trim();
 }
 
-async function getPlayerIdByName(playerName) {
+async function getPlayerIdByName(playerNameRaw) {
   const players = await loadPlayersXml();
-  const cleanName = cleanPlayerName(playerName);
+
+  const cleanName = cleanPlayerName(playerNameRaw);
   const id = players[cleanName.toLowerCase()];
 
   if (!id) {
-    console.log(`ERRO: player_id não encontrado para: ${playerName}`);
+    console.log(`ERRO: player_id não encontrado para ${cleanName}`);
     return 0;
   }
 
-  console.log(`PLAYER ID encontrado: ${cleanName} -> ${id}`);
+  console.log(`PLAYER ID: ${cleanName} -> ${id}`);
   return id;
 }
 
-async function parseActivities(content) {
+async function parseOglightPostData(content) {
   const lines = content.split('\n');
-  const map = new Map();
+  const postData = {};
 
   for (const line of lines) {
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
@@ -84,10 +86,9 @@ async function parseActivities(content) {
     if (parts.length < 7) continue;
 
     const playerNameRaw = parts[1];
-    const playerName = cleanPlayerName(playerNameRaw);
     const coord = parts[2];
     const type = parts[3];
-    const act = parseInt(parts[4], 10);
+    const activity = parseInt(parts[4], 10);
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
 
@@ -96,53 +97,45 @@ async function parseActivities(content) {
 
     const [galaxy, system, position] = coord.split(':').map(Number);
 
-    if (!map.has(coord)) {
-      map.set(coord, {
+    if (!postData[coord]) {
+      postData[coord] = {
         id: planetID,
         player_id: playerID,
-        name: playerName,
-        coords: coord,
-        timestamp: Math.floor(Date.now() / 1000),
-
         teamkey: PTRE_TEAM_KEY,
         mv: false,
         activity: 0,
-
         galaxy: galaxy,
         system: system,
         position: position,
-
         main: false,
         cdr_total_size: 0
-      });
+      };
 
       if (moonID && moonID > 0) {
-        map.get(coord).moon = {
+        postData[coord].moon = {
           id: moonID,
           activity: 0
         };
       }
     }
 
-    const item = map.get(coord);
-
     if (type === 'planet') {
-      item.activity = act;
+      postData[coord].activity = activity;
     }
 
     if (type === 'moon') {
-      if (!item.moon) {
-        item.moon = {
+      if (!postData[coord].moon) {
+        postData[coord].moon = {
           id: moonID,
           activity: 0
         };
       }
 
-      item.moon.activity = act;
+      postData[coord].moon.activity = activity;
     }
   }
 
-  return Array.from(map.values());
+  return postData;
 }
 
 client.on('messageCreate', async (message) => {
@@ -161,16 +154,12 @@ client.on('messageCreate', async (message) => {
     console.log('RELATORIO RECEBIDO');
     console.log(content);
 
-    const activities = await parseActivities(content);
+    const postData = await parseOglightPostData(content);
 
-    if (activities.length === 0) {
-      console.log('Nenhuma atividade válida para enviar ao PTRE.');
+    if (Object.keys(postData).length === 0) {
+      console.log('Nenhum dado válido para enviar ao PTRE.');
       return;
     }
-
-    const finalPayload = {
-      activities: activities
-    };
 
     const params = new URLSearchParams({
       tool: 'oglight',
@@ -183,19 +172,14 @@ client.on('messageCreate', async (message) => {
     const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
     console.log('========================');
-    console.log('PAYLOAD FINAL');
-    console.log(JSON.stringify(finalPayload, null, 2));
-
-    console.log('========================');
+    console.log('POSTDATA OGLIGHT DIRETO');
+    console.log(JSON.stringify(postData, null, 2));
     console.log('URL');
     console.log(url);
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(finalPayload)
+      body: JSON.stringify(postData)
     });
 
     const text = await response.text();
