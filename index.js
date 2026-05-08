@@ -43,7 +43,8 @@ function parseActivities(text) {
       position: parseInt(coordParts[2], 10),
       player: player,
       position_type: positionType,
-      activity: activity
+      activity: activity,
+      coord: coord
     });
   }
 
@@ -80,17 +81,21 @@ client.on('messageCreate', async (message) => {
 
     const payload = {
       team_key: PTRE_TEAM_KEY,
+
       positions_in_count: activities.length,
       positions_valid_count: activities.length,
       activity_count: activities.length,
-      activities: activities
+
+      positions: activities,
+      activities: activities,
+      player_activity: activities
     };
 
     console.log('URL PTRE:');
     console.log(url);
 
     console.log('PAYLOAD PTRE:');
-    console.log(payload);
+    console.log(JSON.stringify(payload, null, 2));
 
     const response = await fetch(url, {
       method: 'POST',
