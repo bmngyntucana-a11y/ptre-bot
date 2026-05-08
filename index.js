@@ -13,6 +13,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_NAME = 'monitorar-alvos';
 
 const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
+const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
 const PTRE_COUNTRY = 'br';
 const PTRE_UNIVERSE = '178';
 const PTRE_VERSION = '0.15.1';
@@ -21,52 +22,81 @@ client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
 });
 
+function parsePtreActivities(content) {
+  const lines = content.split('\n');
+  const map = new Map();
+
+  for (const line of lines) {
+    if (!line.startsWith('PTRE_ACTIVITY|')) continue;
+
+    const parts = line.trim().split('|');
+    if (parts.length < 7) continue;
+
+    const player = parts[1];
+    const coord = parts[2];
+    const type = parts[3];
+    const activity = parseInt(parts[4], 10);
+    const planetID = parseInt(parts[5], 10);
+    const moonID = parseInt(parts[6], 10);
+
+    const [galaxy, system, position] = coord.split(':').map(Number);
+
+    if (!map.has(coord)) {
+      map.set(coord, {
+        galaxy,
+        system,
+        position,
+        coords: coord,
+
+        player,
+        player_name: player,
+
+        id: planetID,
+        planetID,
+        id_planet: planetID,
+
+        moonID,
+        id_moon: moonID,
+
+        activity: 0,
+        moonActivity: 0
+      });
+    }
+
+    const item = map.get(coord);
+
+    if (type === 'planet') {
+      item.activity = activity;
+    }
+
+    if (type === 'moon') {
+      item.moonActivity = activity;
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 client.on('messageCreate', async (message) => {
   try {
     if (!message.content) return;
     if (!message.channel || message.channel.name !== CHANNEL_NAME) return;
-    if (message.author.id === client.user.id) return;
+
+    // Ignora apenas mensagens do próprio bot Railway.
+    // Webhook/NinjaBot pode passar.
+    if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
 
-    const lines = content.split('\n');
-    const activities = [];
+    // Aceita PTRE_ACTIVITY em qualquer linha, mesmo começando por PTRE_REPORT.
+    if (!content.includes('PTRE_ACTIVITY|')) return;
 
-    for (const line of lines) {
-      if (!line.startsWith('PTRE_ACTIVITY|')) continue;
+    const positions = parsePtreActivities(content);
 
-      const parts = line.split('|');
-      if (parts.length < 7) continue;
-
-      const player = parts[1];
-      const coord = parts[2];
-      const type = parts[3];
-      const activity = parseInt(parts[4], 10);
-      const planetID = parseInt(parts[5], 10);
-      const moonID = parseInt(parts[6], 10);
-
-      const coordParts = coord.split(':');
-
-      activities.push({
-        galaxy: parseInt(coordParts[0], 10),
-        system: parseInt(coordParts[1], 10),
-        position: parseInt(coordParts[2], 10),
-        player: player,
-        type: type,
-        activity: activity,
-        id_planet: planetID,
-        id_moon: moonID,
-        coord: coord
-      });
+    if (positions.length === 0) {
+      console.log('Mensagem recebida, mas sem atividades válidas.');
+      return;
     }
-
-    if (activities.length === 0) return;
-
-    console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(content);
-    console.log('ATIVIDADES PROCESSADAS:');
-    console.log(JSON.stringify(activities, null, 2));
 
     const params = new URLSearchParams({
       tool: 'oglight',
@@ -80,8 +110,24 @@ client.on('messageCreate', async (message) => {
 
     const payload = {
       team_key: PTRE_TEAM_KEY,
-      activities: activities
+      api_key: PTRE_API_KEY,
+
+      positions_in_count: positions.length,
+      positions_valid_count: positions.length,
+      activity_count: positions.length,
+
+      positions,
+      activities: positions,
+      player_activity: positions
     };
+
+    console.log('========================');
+    console.log('RELATORIO RECEBIDO');
+    console.log(content);
+    console.log('URL PTRE:');
+    console.log(url);
+    console.log('PAYLOAD PTRE:');
+    console.log(JSON.stringify(payload, null, 2));
 
     const response = await fetch(url, {
       method: 'POST',
