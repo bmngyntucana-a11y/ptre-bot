@@ -11,47 +11,37 @@ const client = new Client({
 const CHANNEL_NAME = 'monitorar-alvos';
 
 const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
-const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
+const PTRE_URL = 'https://ptre.chez.gg/scripts/oglight_import.php';
 
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
-  console.log(`PTRE API: ${PTRE_API_KEY}`);
+  console.log(`PTRE API configurada`);
 });
 
 client.on('messageCreate', async (message) => {
   try {
-
     if (message.author.bot === false) return;
-
     if (!message.content) return;
 
-    if (
-      !message.channel ||
-      message.channel.name !== CHANNEL_NAME
-    ) {
+    if (!message.channel || message.channel.name !== CHANNEL_NAME) {
       return;
     }
 
+    const report = message.content.trim();
+
     console.log('========================');
     console.log('RELATORIO RECEBIDO');
-    console.log(message.content);
-    console.log('========================');
+    console.log(report);
 
-    const payload = {
-      team_key: PTRE_TEAM_KEY,
-      api_key: PTRE_API_KEY,
-      report: message.content
-    };
+    const body = new URLSearchParams();
+    body.append('sr_id', PTRE_API_KEY);
 
-    console.log('PAYLOAD PTRE:');
-    console.log(payload);
-
-    const response = await fetch('https://ptre.chez.gg/scripts/oglight_import.php', {
+    const response = await fetch(PTRE_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: JSON.stringify(payload)
+      body
     });
 
     const text = await response.text();
