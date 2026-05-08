@@ -12,6 +12,11 @@ const TOKEN = process.env.DISCORD_TOKEN;
 
 const CHANNEL_NAME = 'monitorar-alvos';
 
+const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
+const PTRE_COUNTRY = 'br';
+const PTRE_UNIVERSE = '178';
+const PTRE_VERSION = '0.15.1';
+
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
 });
@@ -20,17 +25,9 @@ client.on('messageCreate', async (message) => {
   try {
     if (!message.content) return;
     if (!message.channel || message.channel.name !== CHANNEL_NAME) return;
-
-    // Não ignorar webhooks/bots do NinjaBot.
-    // Ignora apenas mensagens do próprio bot Railway.
     if (message.author.id === client.user.id) return;
 
     const content = message.content.trim();
-
-    console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(content);
-    console.log('========================');
 
     const lines = content.split('\n');
     const activities = [];
@@ -39,7 +36,6 @@ client.on('messageCreate', async (message) => {
       if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
       const parts = line.split('|');
-
       if (parts.length < 7) continue;
 
       const player = parts[1];
@@ -64,9 +60,41 @@ client.on('messageCreate', async (message) => {
       });
     }
 
+    if (activities.length === 0) return;
+
+    console.log('========================');
+    console.log('RELATORIO RECEBIDO');
+    console.log(content);
     console.log('ATIVIDADES PROCESSADAS:');
     console.log(JSON.stringify(activities, null, 2));
-    console.log('TOTAL:', activities.length);
+
+    const params = new URLSearchParams({
+      tool: 'oglight',
+      team_key: PTRE_TEAM_KEY,
+      country: PTRE_COUNTRY,
+      univers: PTRE_UNIVERSE,
+      version: PTRE_VERSION
+    });
+
+    const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
+
+    const payload = {
+      team_key: PTRE_TEAM_KEY,
+      activities: activities
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const text = await response.text();
+
+    console.log('RESPOSTA PTRE:');
+    console.log(text);
     console.log('========================');
 
   } catch (err) {
