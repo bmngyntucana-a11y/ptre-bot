@@ -10,9 +10,7 @@ const client = new Client({
 
 const CHANNEL_NAME = 'monitorar-alvos';
 
-const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
 const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
-
 const PTRE_COUNTRY = 'br';
 const PTRE_UNIVERSE = '178';
 const PTRE_VERSION = '0.15.1';
@@ -21,6 +19,39 @@ client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
 });
 
+function parseActivities(text) {
+  const lines = text.split('\n');
+  const activities = [];
+
+  for (const line of lines) {
+    if (!line.startsWith('PTRE_ACTIVITY|')) continue;
+
+    const parts = line.trim().split('|');
+    if (parts.length < 5) continue;
+
+    const player = parts[1];
+    const coord = parts[2];
+    const type = parts[3];
+    const minutes = parseInt(parts[4], 10);
+
+    const coordParts = coord.split(':');
+    if (coordParts.length !== 3) continue;
+
+    activities.push({
+      player,
+      galaxy: parseInt(coordParts[0], 10),
+      system: parseInt(coordParts[1], 10),
+      position: parseInt(coordParts[2], 10),
+      type,
+      activity: minutes,
+      minutes,
+      coord
+    });
+  }
+
+  return activities;
+}
+
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot === false) return;
@@ -28,6 +59,12 @@ client.on('messageCreate', async (message) => {
     if (!message.channel || message.channel.name !== CHANNEL_NAME) return;
 
     const report = message.content.trim();
+    const activities = parseActivities(report);
+
+    if (activities.length === 0) {
+      console.log('Mensagem ignorada: sem PTRE_ACTIVITY');
+      return;
+    }
 
     console.log('========================');
     console.log('RELATORIO RECEBIDO');
@@ -46,7 +83,12 @@ client.on('messageCreate', async (message) => {
     const payload = {
       discord_message_id: message.id,
       channel: message.channel.name,
-      content: report
+      positions_in_count: activities.length,
+      activity_count: activities.length,
+      positions_valid_count: activities.length,
+      positions: activities,
+      activities: activities,
+      player_activity: activities
     };
 
     console.log('URL PTRE:');
