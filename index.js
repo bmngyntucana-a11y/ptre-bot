@@ -23,44 +23,39 @@ client.once('ready', () => {
 });
 
 function parsePtreActivities(content) {
-
   const lines = content.split('\n');
   const map = new Map();
 
   for (const line of lines) {
-
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
     const parts = line.trim().split('|');
-
     if (parts.length < 7) continue;
 
     const player = parts[1];
     const coord = parts[2];
     const type = parts[3];
-    const activity = parseInt(parts[4], 10);
+    const act = parseInt(parts[4], 10);
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
 
     const [galaxy, system, position] = coord.split(':').map(Number);
 
     if (!map.has(coord)) {
-
       map.set(coord, {
-        galaxy,
-        system,
-        position,
-
+        galaxy: galaxy,
+        system: system,
+        position: position,
         coords: coord,
 
-        player,
+        player: player,
         player_name: player,
 
         id: planetID,
-        planetID,
+        planetID: planetID,
         id_planet: planetID,
 
-        moonID,
+        moonID: moonID,
         id_moon: moonID,
 
         activity: 0,
@@ -71,11 +66,11 @@ function parsePtreActivities(content) {
     const item = map.get(coord);
 
     if (type === 'planet') {
-      item.activity = activity;
+      item.activity = act;
     }
 
     if (type === 'moon') {
-      item.moonActivity = activity;
+      item.moonActivity = act;
     }
   }
 
@@ -83,13 +78,10 @@ function parsePtreActivities(content) {
 }
 
 client.on('messageCreate', async (message) => {
-
   try {
-
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
-
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
@@ -103,14 +95,6 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(content);
-
-    console.log('========================');
-    console.log('POSITIONS');
-    console.log(JSON.stringify(positions, null, 2));
-
     const params = new URLSearchParams({
       tool: 'oglight',
       team_key: PTRE_TEAM_KEY,
@@ -119,18 +103,30 @@ client.on('messageCreate', async (message) => {
       version: PTRE_VERSION
     });
 
-    const url =
-      `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
+    const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
+
+    const jsonArray = JSON.stringify(positions);
 
     const form = new URLSearchParams();
-
     form.append('team_key', PTRE_TEAM_KEY);
     form.append('api_key', PTRE_API_KEY);
-    form.append('activities', JSON.stringify(positions));
+
+    form.append('positions_in_count', String(positions.length));
+    form.append('positions_valid_count', String(positions.length));
+    form.append('activity_count', String(positions.length));
+
+    form.append('activities', jsonArray);
+    form.append('activity', jsonArray);
+    form.append('positions', jsonArray);
+    form.append('player_activity', jsonArray);
 
     console.log('========================');
-    console.log('URL PTRE');
-    console.log(url);
+    console.log('RELATORIO RECEBIDO');
+    console.log(content);
+
+    console.log('========================');
+    console.log('POSITIONS');
+    console.log(JSON.stringify(positions, null, 2));
 
     console.log('========================');
     console.log('FORM PTRE');
@@ -152,7 +148,6 @@ client.on('messageCreate', async (message) => {
     console.log('========================');
 
   } catch (err) {
-
     console.error('ERRO GERAL');
     console.error(err);
   }
