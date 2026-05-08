@@ -11,7 +11,7 @@ const client = new Client({
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_NAME = 'monitorar-alvos';
 
-const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
+const PTRE_TEAM_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
 const PTRE_COUNTRY = 'br';
 const PTRE_UNIVERSE = '178';
 const PTRE_VERSION = '5.2.2';
@@ -52,9 +52,9 @@ function parseOglightFormat(content) {
         teamkey: PTRE_TEAM_KEY,
         mv: false,
         activity: 0,
-        galaxy: galaxy,
-        system: system,
-        position: position,
+        galaxy,
+        system,
+        position,
         main: false,
         cdr_total_size: 0
       };
@@ -78,7 +78,6 @@ function parseOglightFormat(content) {
           activity: 0
         };
       }
-
       postData[coord].moon.activity = act;
     }
   }
@@ -91,21 +90,13 @@ client.on('messageCreate', async (message) => {
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
-
-    // Ignora apenas mensagens do próprio bot.
-    // Webhook/NinjaBot pode passar.
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
-
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
     const postData = parseOglightFormat(content);
-
-    if (Object.keys(postData).length === 0) {
-      console.log('Sem dados válidos para PTRE.');
-      return;
-    }
+    if (Object.keys(postData).length === 0) return;
 
     const params = new URLSearchParams({
       tool: 'oglight',
@@ -117,31 +108,21 @@ client.on('messageCreate', async (message) => {
 
     const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
-    const form = new URLSearchParams();
-    form.append('activities', JSON.stringify(postData));
-
     console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(content);
     console.log('POSTDATA OGLIGHT');
     console.log(JSON.stringify(postData, null, 2));
     console.log('URL');
     console.log(url);
-    console.log('FORM');
-    console.log(form.toString());
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: form.toString()
+      body: JSON.stringify(postData)
     });
 
-    const text = await response.text();
+    const data = await response.text();
 
     console.log('RESPOSTA PTRE');
-    console.log(text);
+    console.log(data);
     console.log('========================');
 
   } catch (err) {
