@@ -31,7 +31,17 @@ function parseActivities(text) {
 
     const player = parts[1];
     const coord = parts[2];
-    const positionType = parts[3];
+
+    let positionType = parts[3];
+
+    if (positionType === 'lua') {
+      positionType = 'moon';
+    }
+
+    if (positionType === 'planeta') {
+      positionType = 'planet';
+    }
+
     const activity = parseInt(parts[4], 10);
 
     const coordParts = coord.split(':');
