@@ -23,13 +23,16 @@ client.once('ready', () => {
 });
 
 function parsePtreActivities(content) {
+
   const lines = content.split('\n');
   const map = new Map();
 
   for (const line of lines) {
+
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
     const parts = line.trim().split('|');
+
     if (parts.length < 7) continue;
 
     const player = parts[1];
@@ -42,10 +45,12 @@ function parsePtreActivities(content) {
     const [galaxy, system, position] = coord.split(':').map(Number);
 
     if (!map.has(coord)) {
+
       map.set(coord, {
         galaxy,
         system,
         position,
+
         coords: coord,
 
         player,
@@ -78,25 +83,33 @@ function parsePtreActivities(content) {
 }
 
 client.on('messageCreate', async (message) => {
-  try {
-    if (!message.content) return;
-    if (!message.channel || message.channel.name !== CHANNEL_NAME) return;
 
-    // Ignora apenas mensagens do próprio bot Railway.
-    // Webhook/NinjaBot pode passar.
+  try {
+
+    if (!message.content) return;
+    if (!message.channel) return;
+    if (message.channel.name !== CHANNEL_NAME) return;
+
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
 
-    // Aceita PTRE_ACTIVITY em qualquer linha, mesmo começando por PTRE_REPORT.
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
     const positions = parsePtreActivities(content);
 
     if (positions.length === 0) {
-      console.log('Mensagem recebida, mas sem atividades válidas.');
+      console.log('Sem posições válidas.');
       return;
     }
+
+    console.log('========================');
+    console.log('RELATORIO RECEBIDO');
+    console.log(content);
+
+    console.log('========================');
+    console.log('POSITIONS');
+    console.log(JSON.stringify(positions, null, 2));
 
     const params = new URLSearchParams({
       tool: 'oglight',
@@ -106,45 +119,42 @@ client.on('messageCreate', async (message) => {
       version: PTRE_VERSION
     });
 
-    const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
+    const url =
+      `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
-    const payload = {
-      team_key: PTRE_TEAM_KEY,
-      api_key: PTRE_API_KEY,
+    const form = new URLSearchParams();
 
-      positions_in_count: positions.length,
-      positions_valid_count: positions.length,
-      activity_count: positions.length,
-
-      positions,
-      activities: positions,
-      player_activity: positions
-    };
+    form.append('team_key', PTRE_TEAM_KEY);
+    form.append('api_key', PTRE_API_KEY);
+    form.append('activities', JSON.stringify(positions));
 
     console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(content);
-    console.log('URL PTRE:');
+    console.log('URL PTRE');
     console.log(url);
-    console.log('PAYLOAD PTRE:');
-    console.log(JSON.stringify(payload, null, 2));
+
+    console.log('========================');
+    console.log('FORM PTRE');
+    console.log(form.toString());
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: JSON.stringify(payload)
+      body: form.toString()
     });
 
     const text = await response.text();
 
-    console.log('RESPOSTA PTRE:');
+    console.log('========================');
+    console.log('RESPOSTA PTRE');
     console.log(text);
     console.log('========================');
 
   } catch (err) {
-    console.error('ERRO:', err);
+
+    console.error('ERRO GERAL');
+    console.error(err);
   }
 });
 
