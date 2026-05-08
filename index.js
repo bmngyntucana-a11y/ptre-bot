@@ -1,82 +1,74 @@
-client.on("messageCreate", async (message) => {
+import { Client, GatewayIntentBits } from 'discord.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
+
+const TOKEN = process.env.DISCORD_TOKEN;
+
+client.once('ready', () => {
+    console.log(`Bot online: ${client.user.tag}`);
+});
+
+client.on('messageCreate', async (message) => {
 
     if (message.author.bot) return;
 
     const content = message.content;
 
-    // =========================
-    // PTRE ACTIVITY
-    // =========================
+    console.log("RELATORIO RECEBIDO");
+    console.log(content);
 
-    if (content.startsWith("PTRE_ACTIVITY|")) {
+    if (!content.startsWith("PTRE_ACTIVITY|")) return;
 
-        const lines = content.split("\n");
+    try {
+
+        const lines = content.split('\n');
+
         const activities = [];
 
         for (const line of lines) {
 
             if (!line.startsWith("PTRE_ACTIVITY|")) continue;
 
-            const parts = line.split("|");
+            const parts = line.split('|');
 
-            if (parts.length < 7) continue;
+            if (parts.length < 6) continue;
 
             const player = parts[1];
             const coord = parts[2];
             const type = parts[3];
-            const minutes = parseInt(parts[4]);
+            const activity = parseInt(parts[4]);
+            const ids = parts[5];
 
-            const planetID = parseInt(parts[5]);
-            const moonID = parseInt(parts[6]);
+            const coordParts = coord.split(':');
 
-            const coordParts = coord.split(":");
-
-            const galaxy = parseInt(coordParts[0]);
-            const system = parseInt(coordParts[1]);
-            const position = parseInt(coordParts[2]);
-
-            const activity = {
-                galaxy: galaxy,
-                system: system,
-                position: position,
+            activities.push({
+                galaxy: parseInt(coordParts[0]),
+                system: parseInt(coordParts[1]),
+                position: parseInt(coordParts[2]),
                 player: player,
                 type: type,
-                activity: minutes,
-                coord: coord,
-                id_planet: planetID,
-                id_moon: moonID
-            };
-
-            activities.push(activity);
+                activity: activity,
+                ids: ids
+            });
         }
 
-        console.log("========================");
-        console.log("ATIVIDADES PTRE:");
-        console.log(activities);
-        console.log("========================");
+        console.log("======================");
+        console.log("PTRE DATA");
+        console.log(JSON.stringify(activities, null, 2));
+        console.log("======================");
 
-        try {
-
-            const response = await axios.post(
-                PTRE_URL,
-                {
-                    team_key: TEAM_KEY,
-                    activities: activities
-                }
-            );
-
-            console.log("========================");
-            console.log("RESPOSTA PTRE:");
-            console.log(response.data);
-            console.log("========================");
-
-        } catch (err) {
-
-            console.log("========================");
-            console.log("ERRO PTRE:");
-            console.log(err.response?.data || err.message);
-            console.log("========================");
-        }
+    } catch (err) {
+        console.error(err);
     }
-
 });
+
+client.login(TOKEN);
