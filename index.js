@@ -9,11 +9,9 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-
 const CHANNEL_NAME = 'monitorar-alvos';
 
 const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
-const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
 const PTRE_COUNTRY = 'br';
 const PTRE_UNIVERSE = '178';
 const PTRE_VERSION = '0.15.1';
@@ -21,6 +19,11 @@ const PTRE_VERSION = '0.15.1';
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
 });
+
+function extractPlayerID(player) {
+  const match = player.match(/\((\d+)\)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
 
 function parsePtreActivities(content) {
   const lines = content.split('\n');
@@ -38,40 +41,23 @@ function parsePtreActivities(content) {
     const act = parseInt(parts[4], 10);
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
-
-    const [galaxy, system, position] = coord.split(':').map(Number);
+    const playerID = extractPlayerID(player);
 
     if (!map.has(coord)) {
       map.set(coord, {
-        galaxy: galaxy,
-        system: system,
-        position: position,
-        coords: coord,
-
-        player: player,
-        player_name: player,
-
+        playerID: playerID,
         id: planetID,
-        planetID: planetID,
-        id_planet: planetID,
-
         moonID: moonID,
-        id_moon: moonID,
-
         activity: 0,
-        moonActivity: 0
+        moonActivity: 0,
+        coords: coord
       });
     }
 
     const item = map.get(coord);
 
-    if (type === 'planet') {
-      item.activity = act;
-    }
-
-    if (type === 'moon') {
-      item.moonActivity = act;
-    }
+    if (type === 'planet') item.activity = act;
+    if (type === 'moon') item.moonActivity = act;
   }
 
   return Array.from(map.values());
@@ -85,15 +71,10 @@ client.on('messageCreate', async (message) => {
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
-
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
-    const positions = parsePtreActivities(content);
-
-    if (positions.length === 0) {
-      console.log('Sem posições válidas.');
-      return;
-    }
+    const activities = parsePtreActivities(content);
+    if (activities.length === 0) return;
 
     const params = new URLSearchParams({
       tool: 'oglight',
@@ -105,31 +86,25 @@ client.on('messageCreate', async (message) => {
 
     const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
-    const jsonArray = JSON.stringify(positions);
-
     const form = new URLSearchParams();
-    form.append('team_key', PTRE_TEAM_KEY);
-    form.append('api_key', PTRE_API_KEY);
 
-    form.append('positions_in_count', String(positions.length));
-    form.append('positions_valid_count', String(positions.length));
-    form.append('activity_count', String(positions.length));
+    for (let i = 0; i < activities.length; i++) {
+      const a = activities[i];
 
-    form.append('activities', jsonArray);
-    form.append('activity', jsonArray);
-    form.append('positions', jsonArray);
-    form.append('player_activity', jsonArray);
+      form.append(`activities[${i}][playerID]`, String(a.playerID));
+      form.append(`activities[${i}][id]`, String(a.id));
+      form.append(`activities[${i}][moonID]`, String(a.moonID));
+      form.append(`activities[${i}][activity]`, String(a.activity));
+      form.append(`activities[${i}][moonActivity]`, String(a.moonActivity));
+      form.append(`activities[${i}][coords]`, a.coords);
+    }
 
     console.log('========================');
     console.log('RELATORIO RECEBIDO');
     console.log(content);
-
-    console.log('========================');
-    console.log('POSITIONS');
-    console.log(JSON.stringify(positions, null, 2));
-
-    console.log('========================');
-    console.log('FORM PTRE');
+    console.log('ACTIVITIES ARRAY');
+    console.log(JSON.stringify(activities, null, 2));
+    console.log('FORM');
     console.log(form.toString());
 
     const response = await fetch(url, {
@@ -142,7 +117,6 @@ client.on('messageCreate', async (message) => {
 
     const text = await response.text();
 
-    console.log('========================');
     console.log('RESPOSTA PTRE');
     console.log(text);
     console.log('========================');
