@@ -1,138 +1,78 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+if (content.startsWith("PTRE_ACTIVITY|")) {
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
+    const lines = content.split("\n");
+    const activities = [];
 
-const CHANNEL_NAME = 'monitorar-alvos';
+    for (const line of lines) {
 
-const PTRE_TEAM_KEY = 'wo-dmah-slfa-9kmn-8u63';
-const PTRE_COUNTRY = 'br';
-const PTRE_UNIVERSE = '178';
-const PTRE_VERSION = '0.15.1';
+        if (!line.startsWith("PTRE_ACTIVITY|")) continue;
 
-client.once('ready', () => {
-  console.log(`Bot online: ${client.user.tag}`);
-});
+        const parts = line.split("|");
 
-function parseActivities(text) {
+        if (parts.length < 7) continue;
 
-  const lines = text.split('\n');
-  const activities = [];
+        const player = parts[1];
+        const coord = parts[2];
+        const type = parts[3];
+        const minutes = parseInt(parts[4]);
 
-  for (const line of lines) {
+        const planetID = parseInt(parts[5]);
+        const moonID = parseInt(parts[6]);
 
-    if (!line.startsWith('PTRE_ACTIVITY|')) continue;
+        const coordParts = coord.split(":");
 
-    const parts = line.trim().split('|');
+        const galaxy = parseInt(coordParts[0]);
+        const system = parseInt(coordParts[1]);
+        const position = parseInt(coordParts[2]);
 
-    if (parts.length < 5) continue;
+        const activity = {
+            galaxy: galaxy,
+            system: system,
+            position: position,
+            player: player,
+            type: type,
+            activity: minutes,
+            coord: coord
+        };
 
-    const player = parts[1];
-    const coord = parts[2];
-    const typeRaw = parts[3];
-    const activity = parseInt(parts[4], 10);
+        if (type == "planet") {
+            activity.id_planet = planetID;
+            activity.id_moon = moonID;
+        }
 
-    const coordParts = coord.split(':');
+        if (type == "moon") {
+            activity.id_planet = planetID;
+            activity.id_moon = moonID;
+        }
 
-    if (coordParts.length !== 3) continue;
-
-    let type = 'planet';
-
-    if (typeRaw === 'lua') {
-      type = 'moon';
+        activities.push(activity);
     }
 
-    activities.push({
-      galaxy: parseInt(coordParts[0], 10),
-      system: parseInt(coordParts[1], 10),
-      position: parseInt(coordParts[2], 10),
+    console.log("========================");
+    console.log("ATIVIDADES PTRE:");
+    console.log(activities);
+    console.log("========================");
 
-      player: player,
+    try {
 
-      type: type,
+        const response = await axios.post(
+            PTRE_URL,
+            {
+                team_key: TEAM_KEY,
+                activities: activities
+            }
+        );
 
-      activity: activity
-    });
-  }
+        console.log("========================");
+        console.log("RESPOSTA PTRE:");
+        console.log(response.data);
+        console.log("========================");
 
-  return activities;
+    } catch (err) {
+
+        console.log("========================");
+        console.log("ERRO PTRE:");
+        console.log(err.response?.data || err.message);
+        console.log("========================");
+    }
 }
-
-client.on('messageCreate', async (message) => {
-
-  try {
-
-    if (!message.author.bot) return;
-    if (!message.content) return;
-    if (!message.channel) return;
-    if (message.channel.name !== CHANNEL_NAME) return;
-
-    const report = message.content.trim();
-
-    const activities = parseActivities(report);
-
-    if (activities.length === 0) {
-
-      console.log('========================');
-      console.log('Mensagem ignorada: sem PTRE_ACTIVITY');
-      console.log('========================');
-
-      return;
-    }
-
-    console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(report);
-
-    const url =
-      `https://ptre.chez.gg/scripts/oglight_import_player_activity.php` +
-      `?tool=oglight` +
-      `&team_key=${PTRE_TEAM_KEY}` +
-      `&country=${PTRE_COUNTRY}` +
-      `&univers=${PTRE_UNIVERSE}` +
-      `&version=${PTRE_VERSION}`;
-
-    const payload = {
-      team_key: PTRE_TEAM_KEY,
-
-      activities: activities
-    };
-
-    console.log('========================');
-    console.log('URL PTRE:');
-    console.log(url);
-
-    console.log('========================');
-    console.log('PAYLOAD PTRE:');
-    console.log(JSON.stringify(payload, null, 2));
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const responseText = await response.text();
-
-    console.log('========================');
-    console.log('RESPOSTA PTRE:');
-    console.log(responseText);
-    console.log('========================');
-
-  } catch (err) {
-
-    console.log('========================');
-    console.log('ERRO:');
-    console.log(err);
-    console.log('========================');
-  }
-});
-
-client.login(process.env.DISCORD_TOKEN);
