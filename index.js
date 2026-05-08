@@ -44,10 +44,7 @@ async function loadPlayersXml() {
   let match;
 
   while ((match = regex.exec(xml)) !== null) {
-    const id = parseInt(match[1], 10);
-    const name = match[2];
-
-    map[name.toLowerCase()] = id;
+    map[match[2].toLowerCase()] = parseInt(match[1], 10);
   }
 
   playersCache = map;
@@ -59,14 +56,11 @@ async function loadPlayersXml() {
 }
 
 function cleanPlayerName(rawName) {
-  return rawName
-    .replace(/\s*\(\d+\)\s*$/g, '')
-    .trim();
+  return rawName.replace(/\s*\(\d+\)\s*$/g, '').trim();
 }
 
 async function getPlayerIdByName(playerName) {
   const players = await loadPlayersXml();
-
   const cleanName = cleanPlayerName(playerName);
   const id = players[cleanName.toLowerCase()];
 
@@ -87,10 +81,10 @@ async function parseActivities(content) {
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
     const parts = line.trim().split('|');
-
     if (parts.length < 7) continue;
 
     const playerNameRaw = parts[1];
+    const playerName = cleanPlayerName(playerNameRaw);
     const coord = parts[2];
     const type = parts[3];
     const act = parseInt(parts[4], 10);
@@ -98,7 +92,6 @@ async function parseActivities(content) {
     const moonID = parseInt(parts[6], 10);
 
     const playerID = await getPlayerIdByName(playerNameRaw);
-
     if (!playerID) continue;
 
     const [galaxy, system, position] = coord.split(':').map(Number);
@@ -107,12 +100,18 @@ async function parseActivities(content) {
       map.set(coord, {
         id: planetID,
         player_id: playerID,
+        name: playerName,
+        coords: coord,
+        timestamp: Math.floor(Date.now() / 1000),
+
         teamkey: PTRE_TEAM_KEY,
         mv: false,
         activity: 0,
+
         galaxy: galaxy,
         system: system,
         position: position,
+
         main: false,
         cdr_total_size: 0
       });
