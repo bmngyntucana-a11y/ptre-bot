@@ -11,7 +11,6 @@ const client = new Client({
 const CHANNEL_NAME = 'monitorar-alvos';
 
 const PTRE_API_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
-
 const PTRE_URL = 'https://ptre.chez.gg/scripts/oglight_import.php';
 
 client.once('ready', () => {
@@ -21,15 +20,10 @@ client.once('ready', () => {
 
 client.on('messageCreate', async (message) => {
   try {
-
     if (message.author.bot === false) return;
-
     if (!message.content) return;
 
-    if (
-      message.channel &&
-      message.channel.name !== CHANNEL_NAME
-    ) {
+    if (message.channel && message.channel.name !== CHANNEL_NAME) {
       return;
     }
 
@@ -40,7 +34,7 @@ client.on('messageCreate', async (message) => {
     console.log(report);
 
     const payload = {
-      w0: 'w0-dmah-slfa-9kmn-8u63',
+      w0: 'wo-dmah-slfa-9kmn-8u63',
       api_key: PTRE_API_KEY,
       report: report
     };
