@@ -91,9 +91,13 @@ client.on('messageCreate', async (message) => {
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
+
+    // Ignora apenas mensagens do próprio bot.
+    // Webhook/NinjaBot pode passar.
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
+
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
     const postData = parseOglightFormat(content);
@@ -113,6 +117,9 @@ client.on('messageCreate', async (message) => {
 
     const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
+    const form = new URLSearchParams();
+    form.append('activities', JSON.stringify(postData));
+
     console.log('========================');
     console.log('RELATORIO RECEBIDO');
     console.log(content);
@@ -120,10 +127,15 @@ client.on('messageCreate', async (message) => {
     console.log(JSON.stringify(postData, null, 2));
     console.log('URL');
     console.log(url);
+    console.log('FORM');
+    console.log(form.toString());
 
     const response = await fetch(url, {
       method: 'POST',
-      body: JSON.stringify(postData)
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: form.toString()
     });
 
     const text = await response.text();
