@@ -1,71 +1,77 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
+const CHANNEL_NAME = 'monitorar-alvos';
+
 client.once('ready', () => {
-    console.log(`Bot online: ${client.user.tag}`);
+  console.log(`Bot online: ${client.user.tag}`);
 });
 
 client.on('messageCreate', async (message) => {
+  try {
+    if (!message.content) return;
+    if (!message.channel || message.channel.name !== CHANNEL_NAME) return;
 
-    if (message.author.bot) return;
+    // Não ignorar webhooks/bots do NinjaBot.
+    // Ignora apenas mensagens do próprio bot Railway.
+    if (message.author.id === client.user.id) return;
 
-    const content = message.content;
+    const content = message.content.trim();
 
-    console.log("RELATORIO RECEBIDO");
+    console.log('========================');
+    console.log('RELATORIO RECEBIDO');
     console.log(content);
+    console.log('========================');
 
-    if (!content.startsWith("PTRE_ACTIVITY|")) return;
+    const lines = content.split('\n');
+    const activities = [];
 
-    try {
+    for (const line of lines) {
+      if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
-        const lines = content.split('\n');
+      const parts = line.split('|');
 
-        const activities = [];
+      if (parts.length < 7) continue;
 
-        for (const line of lines) {
+      const player = parts[1];
+      const coord = parts[2];
+      const type = parts[3];
+      const activity = parseInt(parts[4], 10);
+      const planetID = parseInt(parts[5], 10);
+      const moonID = parseInt(parts[6], 10);
 
-            if (!line.startsWith("PTRE_ACTIVITY|")) continue;
+      const coordParts = coord.split(':');
 
-            const parts = line.split('|');
-
-            if (parts.length < 6) continue;
-
-            const player = parts[1];
-            const coord = parts[2];
-            const type = parts[3];
-            const activity = parseInt(parts[4]);
-            const ids = parts[5];
-
-            const coordParts = coord.split(':');
-
-            activities.push({
-                galaxy: parseInt(coordParts[0]),
-                system: parseInt(coordParts[1]),
-                position: parseInt(coordParts[2]),
-                player: player,
-                type: type,
-                activity: activity,
-                ids: ids
-            });
-        }
-
-        console.log("======================");
-        console.log("PTRE DATA");
-        console.log(JSON.stringify(activities, null, 2));
-        console.log("======================");
-
-    } catch (err) {
-        console.error(err);
+      activities.push({
+        galaxy: parseInt(coordParts[0], 10),
+        system: parseInt(coordParts[1], 10),
+        position: parseInt(coordParts[2], 10),
+        player: player,
+        type: type,
+        activity: activity,
+        id_planet: planetID,
+        id_moon: moonID,
+        coord: coord
+      });
     }
+
+    console.log('ATIVIDADES PROCESSADAS:');
+    console.log(JSON.stringify(activities, null, 2));
+    console.log('TOTAL:', activities.length);
+    console.log('========================');
+
+  } catch (err) {
+    console.error('ERRO:', err);
+  }
 });
 
 client.login(TOKEN);
