@@ -31,21 +31,19 @@ function parseActivities(text) {
 
     const player = parts[1];
     const coord = parts[2];
-    const type = parts[3];
-    const minutes = parseInt(parts[4], 10);
+    const positionType = parts[3];
+    const activity = parseInt(parts[4], 10);
 
     const coordParts = coord.split(':');
     if (coordParts.length !== 3) continue;
 
     activities.push({
-      player,
       galaxy: parseInt(coordParts[0], 10),
       system: parseInt(coordParts[1], 10),
       position: parseInt(coordParts[2], 10),
-      type,
-      activity: minutes,
-      minutes,
-      coord
+      player: player,
+      position_type: positionType,
+      activity: activity
     });
   }
 
@@ -81,14 +79,11 @@ client.on('messageCreate', async (message) => {
     const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
 
     const payload = {
-      discord_message_id: message.id,
-      channel: message.channel.name,
+      team_key: PTRE_TEAM_KEY,
       positions_in_count: activities.length,
-      activity_count: activities.length,
       positions_valid_count: activities.length,
-      positions: activities,
-      activities: activities,
-      player_activity: activities
+      activity_count: activities.length,
+      activities: activities
     };
 
     console.log('URL PTRE:');
