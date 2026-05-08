@@ -16,6 +16,8 @@ const PTRE_COUNTRY = 'br';
 const PTRE_UNIVERSE = '178';
 const PTRE_VERSION = '5.2.2';
 
+const PLAYER_ID = 100381;
+
 client.once('ready', () => {
   console.log(`Bot online: ${client.user.tag}`);
 });
@@ -25,9 +27,11 @@ function parseOglightFormat(content) {
   const postData = {};
 
   for (const line of lines) {
+
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
     const parts = line.trim().split('|');
+
     if (parts.length < 7) continue;
 
     const coord = parts[2];
@@ -39,8 +43,10 @@ function parseOglightFormat(content) {
     const [galaxy, system, position] = coord.split(':').map(Number);
 
     if (!postData[coord]) {
+
       postData[coord] = {
         id: planetID,
+        player_id: PLAYER_ID,
         teamkey: PTRE_TEAM_KEY,
         mv: false,
         activity: 0,
@@ -64,6 +70,7 @@ function parseOglightFormat(content) {
     }
 
     if (type === 'moon') {
+
       if (!postData[coord].moon) {
         postData[coord].moon = {
           id: moonID,
@@ -79,54 +86,67 @@ function parseOglightFormat(content) {
 }
 
 client.on('messageCreate', async (message) => {
+
   try {
+
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
 
-    if (message.author && message.author.id === client.user.id) return;
+    if (message.author.id === client.user.id) return;
 
     const content = message.content.trim();
 
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
+    console.log('========================');
+    console.log('RELATORIO RECEBIDO');
+    console.log(content);
+
     const postData = parseOglightFormat(content);
 
     if (Object.keys(postData).length === 0) {
-      console.log('Sem dados válidos para PTRE.');
+      console.log('Nenhum dado válido.');
       return;
     }
 
-    const params = new URLSearchParams({
-      tool: 'oglight',
-      team_key: PTRE_TEAM_KEY,
-      country: PTRE_COUNTRY,
-      univers: PTRE_UNIVERSE,
-      version: PTRE_VERSION
-    });
+    console.log('========================');
+    console.log('POSTDATA FINAL');
+    console.log(JSON.stringify(postData, null, 2));
 
-    const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
+    const url =
+      `https://ptre.chez.gg/scripts/oglight_import_player_activity.php` +
+      `?tool=oglight` +
+      `&team_key=${PTRE_TEAM_KEY}` +
+      `&country=${PTRE_COUNTRY}` +
+      `&univers=${PTRE_UNIVERSE}` +
+      `&version=${PTRE_VERSION}`;
 
     console.log('========================');
-    console.log('POSTDATA OGLIGHT SEM PLAYER_ID');
-    console.log(JSON.stringify(postData, null, 2));
     console.log('URL');
     console.log(url);
 
     const response = await fetch(url, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(postData)
     });
 
     const text = await response.text();
 
+    console.log('========================');
     console.log('RESPOSTA PTRE');
     console.log(text);
     console.log('========================');
 
   } catch (err) {
+
+    console.error('========================');
     console.error('ERRO GERAL');
     console.error(err);
+    console.error('========================');
   }
 });
 
