@@ -61,8 +61,8 @@ async function loadPlayersXml() {
     const name = nameMatch[1];
 
     map[name.toLowerCase()] = {
-      id: id,
-      name: name,
+      id,
+      name,
       status: statusMatch ? statusMatch[1] : false,
       alliance: allianceMatch ? parseInt(allianceMatch[1], 10) : -1
     };
@@ -86,7 +86,6 @@ async function getPlayerInfoByName(rawName) {
     return null;
   }
 
-  console.log(`PLAYER ID encontrado: ${cleanName} -> ${info.id}`);
   return info;
 }
 
@@ -104,12 +103,9 @@ function ptreUrl(endpoint) {
 
 async function sendToPtre(endpoint, payload) {
   const url = ptreUrl(endpoint);
+  const count = Object.keys(payload).length;
 
-  console.log('========================');
-  console.log(`ENVIANDO PARA ${endpoint}`);
-  console.log(JSON.stringify(payload, null, 2));
-  console.log('URL');
-  console.log(url);
+  console.log(`Enviando ${count} entradas para ${endpoint}`);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -121,9 +117,7 @@ async function sendToPtre(endpoint, payload) {
 
   const text = await response.text();
 
-  console.log('RESPOSTA PTRE');
-  console.log(text);
-  console.log('========================');
+  console.log(`Resposta ${endpoint}: ${text}`);
 
   return text;
 }
@@ -161,9 +155,9 @@ async function buildPtrePayloads(content) {
       positionsData[coord] = {
         teamkey: PTRE_TEAM_KEY,
 
-        galaxy: galaxy,
-        system: system,
-        position: position,
+        galaxy,
+        system,
+        position,
 
         timestamp_ig: now,
 
@@ -199,9 +193,9 @@ async function buildPtrePayloads(content) {
         mv: playerInfo.status && String(playerInfo.status).includes('v') ? true : false,
         activity: 0,
 
-        galaxy: galaxy,
-        system: system,
-        position: position,
+        galaxy,
+        system,
+        position,
 
         main: false,
         cdr_total_size: 0
@@ -249,18 +243,12 @@ client.on('messageCreate', async (message) => {
 
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
-    console.log('========================');
-    console.log('RELATORIO RECEBIDO');
-    console.log(content);
-    console.log('========================');
-
     const { positionsData, activitiesData } = await buildPtrePayloads(content);
 
     const positionsCount = Object.keys(positionsData).length;
     const activitiesCount = Object.keys(activitiesData).length;
 
-    console.log(`positionsData: ${positionsCount}`);
-    console.log(`activitiesData: ${activitiesCount}`);
+    console.log(`Relatório recebido: positions=${positionsCount}, activities=${activitiesCount}`);
 
     if (activitiesCount === 0) {
       console.log('Nenhuma atividade válida para enviar.');
@@ -268,28 +256,15 @@ client.on('messageCreate', async (message) => {
     }
 
     if (positionsCount > 0) {
-      console.log('========================');
-      console.log('ENVIANDO POSITIONS');
-      console.log(JSON.stringify(positionsData, null, 2));
-      console.log('========================');
-
       await sendToPtre('api_galaxy_import_infos.php', {
         positions: positionsData
       });
     }
 
-    console.log('========================');
-    console.log('ENVIANDO ACTIVITIES');
-    console.log(JSON.stringify(activitiesData, null, 2));
-    console.log('========================');
-
     await sendToPtre('oglight_import_player_activity.php', activitiesData);
 
   } catch (err) {
-    console.error('========================');
-    console.error('ERRO GERAL');
-    console.error(err);
-    console.error('========================');
+    console.error('ERRO GERAL:', err);
   }
 });
 
