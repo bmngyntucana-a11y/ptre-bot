@@ -11,7 +11,7 @@ const client = new Client({
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_NAME = 'monitorar-alvos';
 
-const PTRE_TEAM_KEY = 'TM-W9UW-O7W8-XV6U-226M';
+const PTRE_TEAM_KEY = 'TM-HJMV-B2I9-N8N4-OY6B';
 const COUNTRY = 'br';
 const UNIVERSE = '178';
 const VERSION = '5.2.2';
