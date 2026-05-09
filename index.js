@@ -9,10 +9,9 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-
 const CHANNEL_NAME = 'monitorar-alvos';
 
-const PTRE_TEAM_KEY = 'TM-GDID-6GU7-ZXAW-OGEN';
+const PTRE_TEAM_KEY = 'TM-HJMV-B2I9-N8N4-OY6B';
 const COUNTRY = 'br';
 const UNIVERSE = '178';
 const VERSION = '5.2.2';
@@ -35,18 +34,15 @@ async function loadPlayers() {
     const xml = await res.text();
 
     const regex = /<player id="(\d+)" name="([^"]+)"/g;
-
     let match;
 
     while ((match = regex.exec(xml)) !== null) {
       const id = parseInt(match[1], 10);
       const name = match[2];
-
       players[name.toLowerCase()] = id;
     }
 
     playersLoaded = true;
-
     console.log(`Players carregados: ${Object.keys(players).length}`);
 
   } catch (e) {
@@ -54,32 +50,32 @@ async function loadPlayers() {
   }
 }
 
+function cleanPlayerName(rawName) {
+  return rawName.replace(/\s*\(\d+\)\s*$/g, '').trim();
+}
+
 function activityValue(v) {
   const n = parseInt(v, 10);
-
   if (isNaN(n)) return 0;
-
   if (n > 0 && n <= 15) return '*';
-
   return n;
 }
 
 function buildPayload(content) {
   const lines = content.split('\n');
-
   const payload = {};
 
   for (const rawLine of lines) {
-
     const line = rawLine.trim();
 
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
 
     const parts = line.split('|');
-
     if (parts.length < 7) continue;
 
     const playerNameRaw = parts[1].trim();
+    const playerName = cleanPlayerName(playerNameRaw);
+
     const coord = parts[2].trim();
     const type = parts[3].trim();
 
@@ -87,8 +83,6 @@ function buildPayload(content) {
 
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
-
-    const playerName = playerNameRaw.replace(/\s*\(\d+\)\s*$/g, '').trim();
 
     const playerID = players[playerName.toLowerCase()];
 
@@ -100,7 +94,6 @@ function buildPayload(content) {
     const [galaxy, system, position] = coord.split(':').map(Number);
 
     if (!payload[coord]) {
-
       payload[coord] = {
         id: planetID,
         player_id: playerID,
@@ -127,7 +120,6 @@ function buildPayload(content) {
     }
 
     if (type === 'moon') {
-
       if (!payload[coord].moon) {
         payload[coord].moon = {
           id: moonID,
@@ -143,7 +135,6 @@ function buildPayload(content) {
 }
 
 async function sendToPtre(payload) {
-
   const url =
     `https://ptre.chez.gg/scripts/oglight_import_player_activity.php` +
     `?tool=oglight` +
@@ -152,7 +143,8 @@ async function sendToPtre(payload) {
     `&univers=${UNIVERSE}` +
     `&version=${VERSION}`;
 
-  console.log(`Enviando ${Object.keys(payload).length} entradas`);
+  console.log(`Enviando ${Object.keys(payload).length} entradas para o PTRE`);
+  console.log(`Team key usada: ${PTRE_TEAM_KEY}`);
 
   const res = await fetch(url, {
     method: 'POST',
@@ -168,23 +160,15 @@ async function sendToPtre(payload) {
 }
 
 client.on('messageCreate', async (message) => {
-
   try {
-
     if (!playersLoaded) return;
-
     if (!message.content) return;
-
     if (!message.channel) return;
-
     if (message.channel.name !== CHANNEL_NAME) return;
-
-    if (message.author.id === client.user.id) return;
-
+    if (message.author && message.author.id === client.user.id) return;
     if (!message.content.includes('PTRE_ACTIVITY|')) return;
 
     const payload = buildPayload(message.content);
-
     const total = Object.keys(payload).length;
 
     console.log(`Relatório recebido: ${total}`);
@@ -194,9 +178,7 @@ client.on('messageCreate', async (message) => {
     await sendToPtre(payload);
 
   } catch (e) {
-
     console.error('ERRO GERAL:', e);
-
   }
 });
 
