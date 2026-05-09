@@ -87,7 +87,6 @@ async function getPlayerInfoByName(rawName) {
   }
 
   console.log(`PLAYER ID encontrado: ${cleanName} -> ${info.id}`);
-
   return info;
 }
 
@@ -152,7 +151,6 @@ async function buildPtrePayloads(content) {
     const moonID = parseInt(parts[6], 10);
 
     const playerInfo = await getPlayerInfoByName(playerNameRaw);
-
     if (!playerInfo) continue;
 
     const [galaxy, system, position] = coord.split(':').map(Number);
@@ -270,8 +268,20 @@ client.on('messageCreate', async (message) => {
     }
 
     if (positionsCount > 0) {
-      await sendToPtre('api_galaxy_import_infos.php', positionsData);
+      console.log('========================');
+      console.log('ENVIANDO POSITIONS');
+      console.log(JSON.stringify(positionsData, null, 2));
+      console.log('========================');
+
+      await sendToPtre('api_galaxy_import_infos.php', {
+        positions: positionsData
+      });
     }
+
+    console.log('========================');
+    console.log('ENVIANDO ACTIVITIES');
+    console.log(JSON.stringify(activitiesData, null, 2));
+    console.log('========================');
 
     await sendToPtre('oglight_import_player_activity.php', activitiesData);
 
