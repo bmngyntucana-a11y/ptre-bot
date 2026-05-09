@@ -44,7 +44,6 @@ async function loadPlayersXml() {
 
   const map = {};
   const regex = /<player\s+([^>]+)>/g;
-
   let match;
 
   while ((match = regex.exec(xml)) !== null) {
@@ -77,12 +76,12 @@ async function loadPlayersXml() {
 }
 
 async function getPlayerInfoByName(rawName) {
-  const cleanName = cleanPlayerName(rawName);
   const players = await loadPlayersXml();
+  const cleanName = cleanPlayerName(rawName);
   const info = players[cleanName.toLowerCase()];
 
   if (!info) {
-    console.log(`ERRO: player_id não encontrado para ${cleanName}`);
+    console.log(`Player não encontrado no XML: ${cleanName}`);
     return null;
   }
 
@@ -102,12 +101,11 @@ function ptreUrl(endpoint) {
 }
 
 async function sendToPtre(endpoint, payload) {
-  const url = ptreUrl(endpoint);
-  const count = Object.keys(payload).length;
+  const count = Array.isArray(payload) ? payload.length : Object.keys(payload).length;
 
   console.log(`Enviando ${count} entradas para ${endpoint}`);
 
-  const response = await fetch(url, {
+  const response = await fetch(ptreUrl(endpoint), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -125,8 +123,8 @@ async function sendToPtre(endpoint, payload) {
 async function buildPtrePayloads(content) {
   const lines = content.split('\n');
 
-  const positionsData = {};
-  const activitiesData = {};
+  const positionsData = [];
+  const activitiesData = [];
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -148,11 +146,16 @@ async function buildPtrePayloads(content) {
     if (!playerInfo) continue;
 
     const [galaxy, system, position] = coord.split(':').map(Number);
-
     const now = Date.now();
 
-    if (!positionsData[coord]) {
-      positionsData[coord] = {
+    let positionEntry = positionsData.find(
+      p => p.galaxy === galaxy &&
+           p.system === system &&
+           p.position === position
+    );
+
+    if (!positionEntry) {
+      positionEntry = {
         teamkey: PTRE_TEAM_KEY,
 
         galaxy,
@@ -178,15 +181,23 @@ async function buildPtrePayloads(content) {
       };
 
       if (moonID && moonID > 0) {
-        positionsData[coord].moon = {
+        positionEntry.moon = {
           id: moonID,
           size: -1
         };
       }
+
+      positionsData.push(positionEntry);
     }
 
-    if (!activitiesData[coord]) {
-      activitiesData[coord] = {
+    let activityEntry = activitiesData.find(
+      p => p.galaxy === galaxy &&
+           p.system === system &&
+           p.position === position
+    );
+
+    if (!activityEntry) {
+      activityEntry = {
         id: planetID,
         player_id: playerInfo.id,
         teamkey: PTRE_TEAM_KEY,
@@ -202,26 +213,28 @@ async function buildPtrePayloads(content) {
       };
 
       if (moonID && moonID > 0) {
-        activitiesData[coord].moon = {
+        activityEntry.moon = {
           id: moonID,
           activity: 0
         };
       }
+
+      activitiesData.push(activityEntry);
     }
 
     if (type === 'planet') {
-      activitiesData[coord].activity = activity;
+      activityEntry.activity = activity;
     }
 
     if (type === 'moon') {
-      if (!activitiesData[coord].moon) {
-        activitiesData[coord].moon = {
+      if (!activityEntry.moon) {
+        activityEntry.moon = {
           id: moonID,
           activity: 0
         };
       }
 
-      activitiesData[coord].moon.activity = activity;
+      activityEntry.moon.activity = activity;
     }
   }
 
@@ -245,23 +258,15 @@ client.on('messageCreate', async (message) => {
 
     const { positionsData, activitiesData } = await buildPtrePayloads(content);
 
-    const positionsCount = Object.keys(positionsData).length;
-    const activitiesCount = Object.keys(activitiesData).length;
+    console.log(`Relatório recebido: positions=${positionsData.length}, activities=${activitiesData.length}`);
 
-    console.log(`Relatório recebido: positions=${positionsCount}, activities=${activitiesCount}`);
-
-    if (activitiesCount === 0) {
-      console.log('Nenhuma atividade válida para enviar.');
-      return;
+    if (positionsData.length > 0) {
+      await sendToPtre('api_galaxy_import_infos.php', positionsData);
     }
 
-    if (positionsCount > 0) {
-      await sendToPtre('api_galaxy_import_infos.php', {
-        positions: positionsData
-      });
+    if (activitiesData.length > 0) {
+      await sendToPtre('oglight_import_player_activity.php', activitiesData);
     }
-
-    await sendToPtre('oglight_import_player_activity.php', activitiesData);
 
   } catch (err) {
     console.error('ERRO GERAL:', err);
