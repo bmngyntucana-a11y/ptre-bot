@@ -33,20 +33,20 @@ async function loadPlayersXml() {
     return playersCache;
   }
 
-  console.log('Baixando players.xml...');
-
   const response = await fetch(PLAYERS_XML_URL);
   const xml = await response.text();
 
   const map = {};
-  const regex = /<player\s+id="(\d+)"\s+name="([^"]+)"/g;
+  const regex = /<player\s+id="(\d+)"\s+name="([^"]+)"(?:\s+status="([^"]+)")?/g;
 
   let match;
 
   while ((match = regex.exec(xml)) !== null) {
     const id = parseInt(match[1], 10);
-    const name = match[2].toLowerCase();
-    map[name] = id;
+    const name = match[2];
+    const status = match[3] || false;
+
+    map[name.toLowerCase()] = { id, name, status };
   }
 
   playersCache = map;
@@ -60,24 +60,25 @@ function cleanPlayerName(rawName) {
   return rawName.replace(/\s*\(\d+\)\s*$/g, '').trim();
 }
 
-async function getPlayerIdByName(playerNameRaw) {
+async function getPlayerInfoByName(playerNameRaw) {
   const players = await loadPlayersXml();
-
   const cleanName = cleanPlayerName(playerNameRaw);
-  const id = players[cleanName.toLowerCase()];
+  const info = players[cleanName.toLowerCase()];
 
-  if (!id) {
+  if (!info) {
     console.log(`ERRO: player_id não encontrado para ${cleanName}`);
-    return 0;
+    return null;
   }
 
-  console.log(`PLAYER ID: ${cleanName} -> ${id}`);
-  return id;
+  console.log(`PLAYER ID: ${cleanName} -> ${info.id}`);
+  return info;
 }
 
-async function parseOglightPostData(content) {
+async function buildPtreData(content) {
   const lines = content.split('\n');
-  const postData = {};
+
+  const positionsData = {};
+  const activitiesData = {};
 
   for (const line of lines) {
     if (!line.startsWith('PTRE_ACTIVITY|')) continue;
@@ -92,27 +93,46 @@ async function parseOglightPostData(content) {
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
 
-    const playerID = await getPlayerIdByName(playerNameRaw);
-    if (!playerID) continue;
+    const playerInfo = await getPlayerInfoByName(playerNameRaw);
+    if (!playerInfo) continue;
 
     const [galaxy, system, position] = coord.split(':').map(Number);
 
-    if (!postData[coord]) {
-      postData[coord] = {
+    if (!positionsData[coord]) {
+      positionsData[coord] = {
         id: planetID,
-        player_id: playerID,
+        player_id: playerInfo.id,
+        name: playerInfo.name,
+        rank: -1,
+        score: -1,
+        fleet: -1,
+        status: playerInfo.status || false
+      };
+
+      if (moonID && moonID > 0) {
+        positionsData[coord].moon = {
+          id: moonID,
+          size: -1
+        };
+      }
+    }
+
+    if (!activitiesData[coord]) {
+      activitiesData[coord] = {
+        id: planetID,
+        player_id: playerInfo.id,
         teamkey: PTRE_TEAM_KEY,
-        mv: false,
+        mv: playerInfo.status && String(playerInfo.status).includes('v'),
         activity: 0,
-        galaxy: galaxy,
-        system: system,
-        position: position,
+        galaxy,
+        system,
+        position,
         main: false,
         cdr_total_size: 0
       };
 
       if (moonID && moonID > 0) {
-        postData[coord].moon = {
+        activitiesData[coord].moon = {
           id: moonID,
           activity: 0
         };
@@ -120,22 +140,57 @@ async function parseOglightPostData(content) {
     }
 
     if (type === 'planet') {
-      postData[coord].activity = activity;
+      activitiesData[coord].activity = activity;
     }
 
     if (type === 'moon') {
-      if (!postData[coord].moon) {
-        postData[coord].moon = {
+      if (!activitiesData[coord].moon) {
+        activitiesData[coord].moon = {
           id: moonID,
           activity: 0
         };
       }
 
-      postData[coord].moon.activity = activity;
+      activitiesData[coord].moon.activity = activity;
     }
   }
 
-  return postData;
+  return { positionsData, activitiesData };
+}
+
+function makeUrl(endpoint) {
+  const params = new URLSearchParams({
+    tool: 'oglight',
+    team_key: PTRE_TEAM_KEY,
+    country: PTRE_COUNTRY,
+    univers: PTRE_UNIVERSE,
+    version: PTRE_VERSION
+  });
+
+  return `https://ptre.chez.gg/scripts/${endpoint}?${params.toString()}`;
+}
+
+async function sendJsonToPtre(endpoint, data) {
+  const url = makeUrl(endpoint);
+
+  console.log('========================');
+  console.log(`ENVIANDO PARA ${endpoint}`);
+  console.log(JSON.stringify(data, null, 2));
+  console.log('URL');
+  console.log(url);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+  const text = await response.text();
+
+  console.log('RESPOSTA');
+  console.log(text);
+  console.log('========================');
+
+  return text;
 }
 
 client.on('messageCreate', async (message) => {
@@ -143,51 +198,27 @@ client.on('messageCreate', async (message) => {
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
-
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
-
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
     console.log('========================');
     console.log('RELATORIO RECEBIDO');
     console.log(content);
 
-    const postData = await parseOglightPostData(content);
+    const { positionsData, activitiesData } = await buildPtreData(content);
 
-    if (Object.keys(postData).length === 0) {
+    if (Object.keys(activitiesData).length === 0) {
       console.log('Nenhum dado válido para enviar ao PTRE.');
       return;
     }
 
-    const params = new URLSearchParams({
-      tool: 'oglight',
-      team_key: PTRE_TEAM_KEY,
-      country: PTRE_COUNTRY,
-      univers: PTRE_UNIVERSE,
-      version: PTRE_VERSION
-    });
+    if (Object.keys(positionsData).length > 0) {
+      await sendJsonToPtre('api_galaxy_import_infos.php', positionsData);
+    }
 
-    const url = `https://ptre.chez.gg/scripts/oglight_import_player_activity.php?${params.toString()}`;
-
-    console.log('========================');
-    console.log('POSTDATA OGLIGHT DIRETO');
-    console.log(JSON.stringify(postData, null, 2));
-    console.log('URL');
-    console.log(url);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      body: JSON.stringify(postData)
-    });
-
-    const text = await response.text();
-
-    console.log('========================');
-    console.log('RESPOSTA PTRE');
-    console.log(text);
-    console.log('========================');
+    await sendJsonToPtre('oglight_import_player_activity.php', activitiesData);
 
   } catch (err) {
     console.error('========================');
