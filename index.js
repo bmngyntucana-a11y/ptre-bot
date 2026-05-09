@@ -30,6 +30,16 @@ function cleanPlayerName(rawName) {
   return rawName.replace(/\s*\(\d+\)\s*$/g, '').trim();
 }
 
+function toOglightActivity(value) {
+  const n = parseInt(value, 10);
+
+  if (Number.isNaN(n)) return 0;
+
+  if (n > 0 && n <= 15) return '*';
+
+  return n;
+}
+
 async function loadPlayersXml() {
   const now = Date.now();
 
@@ -52,7 +62,6 @@ async function loadPlayersXml() {
     const idMatch = attrs.match(/id="(\d+)"/);
     const nameMatch = attrs.match(/name="([^"]+)"/);
     const statusMatch = attrs.match(/status="([^"]+)"/);
-    const allianceMatch = attrs.match(/alliance="(\d+)"/);
 
     if (!idMatch || !nameMatch) continue;
 
@@ -62,8 +71,7 @@ async function loadPlayersXml() {
     map[name.toLowerCase()] = {
       id,
       name,
-      status: statusMatch ? statusMatch[1] : false,
-      alliance: allianceMatch ? parseInt(allianceMatch[1], 10) : -1
+      status: statusMatch ? statusMatch[1] : false
     };
   }
 
@@ -100,31 +108,26 @@ function ptreUrl(endpoint) {
   return `https://ptre.chez.gg/scripts/${endpoint}?${params.toString()}`;
 }
 
-async function sendToPtre(endpoint, payload) {
-  const count = Array.isArray(payload) ? payload.length : Object.keys(payload).length;
+async function sendActivitiesToPtre(activitiesData) {
+  const count = Object.keys(activitiesData).length;
 
-  console.log(`Enviando ${count} entradas para ${endpoint}`);
+  console.log(`Enviando ${count} entradas para oglight_import_player_activity.php`);
 
-  const response = await fetch(ptreUrl(endpoint), {
+  const response = await fetch(ptreUrl('oglight_import_player_activity.php'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(activitiesData)
   });
 
   const text = await response.text();
 
-  console.log(`Resposta ${endpoint}: ${text}`);
+  console.log(`Resposta PTRE: ${text}`);
 
   return text;
 }
 
-async function buildPtrePayloads(content) {
+async function buildActivitiesPayload(content) {
   const lines = content.split('\n');
-
-  const positionsData = [];
-  const activitiesData = [];
+  const activitiesData = {};
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -138,110 +141,57 @@ async function buildPtrePayloads(content) {
     const playerNameRaw = parts[1];
     const coord = parts[2];
     const type = parts[3];
-    const activity = parseInt(parts[4], 10);
+    const activityRaw = parts[4];
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
 
     const playerInfo = await getPlayerInfoByName(playerNameRaw);
+
     if (!playerInfo) continue;
 
     const [galaxy, system, position] = coord.split(':').map(Number);
-    const now = Date.now();
 
-    let positionEntry = positionsData.find(
-      p => p.galaxy === galaxy &&
-           p.system === system &&
-           p.position === position
-    );
-
-    if (!positionEntry) {
-      positionEntry = {
-        teamkey: PTRE_TEAM_KEY,
-
-        galaxy,
-        system,
-        position,
-
-        timestamp_ig: now,
-
-        old_player_id: -1,
-        timestamp_api: -1,
-        old_name: false,
-        old_rank: -1,
-        old_score: -1,
-        old_fleet: -1,
-
-        id: planetID,
-        player_id: playerInfo.id,
-        name: playerInfo.name,
-        rank: -1,
-        score: -1,
-        fleet: -1,
-        status: playerInfo.status || false
-      };
-
-      if (moonID && moonID > 0) {
-        positionEntry.moon = {
-          id: moonID,
-          size: -1
-        };
-      }
-
-      positionsData.push(positionEntry);
-    }
-
-    let activityEntry = activitiesData.find(
-      p => p.galaxy === galaxy &&
-           p.system === system &&
-           p.position === position
-    );
-
-    if (!activityEntry) {
-      activityEntry = {
+    if (!activitiesData[coord]) {
+      activitiesData[coord] = {
         id: planetID,
         player_id: playerInfo.id,
         teamkey: PTRE_TEAM_KEY,
         mv: playerInfo.status && String(playerInfo.status).includes('v') ? true : false,
         activity: 0,
-
         galaxy,
         system,
         position,
-
         main: false,
         cdr_total_size: 0
       };
 
       if (moonID && moonID > 0) {
-        activityEntry.moon = {
+        activitiesData[coord].moon = {
           id: moonID,
           activity: 0
         };
       }
-
-      activitiesData.push(activityEntry);
     }
 
+    const oglActivity = toOglightActivity(activityRaw);
+
     if (type === 'planet') {
-      activityEntry.activity = activity;
+      activitiesData[coord].activity = oglActivity;
     }
 
     if (type === 'moon') {
-      if (!activityEntry.moon) {
-        activityEntry.moon = {
+      if (!activitiesData[coord].moon) {
+        activitiesData[coord].moon = {
           id: moonID,
           activity: 0
         };
       }
 
-      activityEntry.moon.activity = activity;
+      activitiesData[coord].moon.activity = oglActivity;
     }
   }
 
-  return {
-    positionsData,
-    activitiesData
-  };
+  return activitiesData;
 }
 
 client.on('messageCreate', async (message) => {
@@ -249,24 +199,23 @@ client.on('messageCreate', async (message) => {
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
-
     if (message.author && message.author.id === client.user.id) return;
 
     const content = message.content.trim();
 
     if (!content.includes('PTRE_ACTIVITY|')) return;
 
-    const { positionsData, activitiesData } = await buildPtrePayloads(content);
+    const activitiesData = await buildActivitiesPayload(content);
+    const activitiesCount = Object.keys(activitiesData).length;
 
-    console.log(`Relatório recebido: positions=${positionsData.length}, activities=${activitiesData.length}`);
+    console.log(`Relatório recebido: activities=${activitiesCount}`);
 
-    if (positionsData.length > 0) {
-      await sendToPtre('api_galaxy_import_infos.php', positionsData);
+    if (activitiesCount === 0) {
+      console.log('Nenhuma atividade válida para enviar.');
+      return;
     }
 
-    if (activitiesData.length > 0) {
-      await sendToPtre('oglight_import_player_activity.php', activitiesData);
-    }
+    await sendActivitiesToPtre(activitiesData);
 
   } catch (err) {
     console.error('ERRO GERAL:', err);
