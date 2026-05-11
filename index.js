@@ -36,16 +36,19 @@ async function loadPlayers() {
     const regex = /<player id="(\d+)" name="([^"]+)"/g;
     let match;
 
+    players = {};
+
     while ((match = regex.exec(xml)) !== null) {
       const id = parseInt(match[1], 10);
       const name = match[2];
+
       players[name.toLowerCase()] = id;
     }
 
     playersLoaded = true;
     console.log(`Players carregados: ${Object.keys(players).length}`);
-
   } catch (e) {
+    playersLoaded = false;
     console.error('Erro players.xml', e);
   }
 }
@@ -56,8 +59,12 @@ function cleanPlayerName(rawName) {
 
 function activityValue(v) {
   const n = parseInt(v, 10);
-  if (isNaN(n)) return 0;
+
+  if (isNaN(n)) return 60;
+  if (n <= 0) return 60;
   if (n > 0 && n <= 15) return '*';
+  if (n > 60) return 60;
+
   return n;
 }
 
@@ -70,6 +77,7 @@ function extractCdr(parts) {
   const cdr = parseInt(parts[cdrIndex + 1], 10);
 
   if (isNaN(cdr)) return 0;
+  if (cdr < 0) return 0;
 
   return cdr;
 }
@@ -108,13 +116,18 @@ function buildPayload(content) {
 
     const [galaxy, system, position] = coord.split(':').map(Number);
 
+    if (!galaxy || !system || !position) {
+      console.log(`Coord inválida: ${coord}`);
+      continue;
+    }
+
     if (!payload[coord]) {
       payload[coord] = {
         id: planetID,
         player_id: playerID,
         teamkey: PTRE_TEAM_KEY,
         mv: false,
-        activity: 0,
+        activity: 60,
         galaxy,
         system,
         position,
@@ -125,7 +138,7 @@ function buildPayload(content) {
       if (moonID > 0) {
         payload[coord].moon = {
           id: moonID,
-          activity: 0
+          activity: 60
         };
       }
     }
@@ -139,10 +152,12 @@ function buildPayload(content) {
     }
 
     if (type === 'moon') {
+      if (moonID <= 0) continue;
+
       if (!payload[coord].moon) {
         payload[coord].moon = {
           id: moonID,
-          activity: 0
+          activity: 60
         };
       }
 
@@ -166,11 +181,12 @@ async function sendToPtre(payload) {
     `&univers=${UNIVERSE}` +
     `&version=${VERSION}`;
 
-  console.log(`Enviando ${Object.keys(payload).length} entradas para o PTRE`);
-  console.log(`Team key usada: ${PTRE_TEAM_KEY}`);
-
+  const total = Object.keys(payload).length;
   const debrisCount = Object.values(payload).filter(p => p.cdr_total_size && p.cdr_total_size > 0).length;
+
+  console.log(`Enviando ${total} entradas para o PTRE`);
   console.log(`Entradas com CDR: ${debrisCount}`);
+  console.log(`Team key usada: ${PTRE_TEAM_KEY}`);
 
   const res = await fetch(url, {
     method: 'POST',
@@ -208,7 +224,6 @@ client.on('messageCreate', async (message) => {
     if (total <= 0) return;
 
     await sendToPtre(payload);
-
   } catch (e) {
     console.error('ERRO GERAL:', e);
   }
