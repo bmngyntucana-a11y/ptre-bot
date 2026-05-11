@@ -61,6 +61,19 @@ function activityValue(v) {
   return n;
 }
 
+function extractCdr(parts) {
+  const cdrIndex = parts.indexOf('cdr');
+
+  if (cdrIndex === -1) return 0;
+  if (!parts[cdrIndex + 1]) return 0;
+
+  const cdr = parseInt(parts[cdrIndex + 1], 10);
+
+  if (isNaN(cdr)) return 0;
+
+  return cdr;
+}
+
 function buildPayload(content) {
   const lines = content.split('\n');
   const payload = {};
@@ -68,7 +81,7 @@ function buildPayload(content) {
   for (const rawLine of lines) {
     const line = rawLine.trim();
 
-    if (!line.startsWith('PTRE_ACTIVITY|')) continue;
+    if (!line.startsWith('PTRE_ACTIVITY|') && !line.startsWith('PTRE_SCAN|')) continue;
 
     const parts = line.split('|');
     if (parts.length < 7) continue;
@@ -83,6 +96,8 @@ function buildPayload(content) {
 
     const planetID = parseInt(parts[5], 10);
     const moonID = parseInt(parts[6], 10);
+
+    const cdrTotalSize = extractCdr(parts);
 
     const playerID = players[playerName.toLowerCase()];
 
@@ -104,7 +119,7 @@ function buildPayload(content) {
         system,
         position,
         main: false,
-        cdr_total_size: 0
+        cdr_total_size: cdrTotalSize
       };
 
       if (moonID > 0) {
@@ -113,6 +128,10 @@ function buildPayload(content) {
           activity: 0
         };
       }
+    }
+
+    if (cdrTotalSize > payload[coord].cdr_total_size) {
+      payload[coord].cdr_total_size = cdrTotalSize;
     }
 
     if (type === 'planet') {
@@ -128,6 +147,10 @@ function buildPayload(content) {
       }
 
       payload[coord].moon.activity = activity;
+    }
+
+    if (cdrTotalSize > 0) {
+      console.log(`CDR detectado: ${coord} = ${cdrTotalSize}`);
     }
   }
 
@@ -145,6 +168,9 @@ async function sendToPtre(payload) {
 
   console.log(`Enviando ${Object.keys(payload).length} entradas para o PTRE`);
   console.log(`Team key usada: ${PTRE_TEAM_KEY}`);
+
+  const debrisCount = Object.values(payload).filter(p => p.cdr_total_size && p.cdr_total_size > 0).length;
+  console.log(`Entradas com CDR: ${debrisCount}`);
 
   const res = await fetch(url, {
     method: 'POST',
@@ -166,7 +192,13 @@ client.on('messageCreate', async (message) => {
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
     if (message.author && message.author.id === client.user.id) return;
-    if (!message.content.includes('PTRE_ACTIVITY|')) return;
+
+    if (
+      !message.content.includes('PTRE_ACTIVITY|') &&
+      !message.content.includes('PTRE_SCAN|')
+    ) {
+      return;
+    }
 
     const payload = buildPayload(message.content);
     const total = Object.keys(payload).length;
