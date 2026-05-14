@@ -9,7 +9,7 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_NAME = 'monitorar-alvos';
+const CHANNEL_NAME = 'scaner-ptre';
 
 const PTRE_TEAM_KEY = 'TM-W9UW-O7W8-XV6U-226M';
 const COUNTRY = 'br';
