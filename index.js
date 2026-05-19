@@ -9,20 +9,30 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_NAME = 'scaner-ptre';
 
-const PTRE_TEAM_KEY = 'TM-J8DN-RKYM-01TN-BETS';
-const COUNTRY = 'br';
-const UNIVERSE = '178';
-const VERSION = '5.2.2';
+// Canal onde chegam as mensagens PTRE_SCAN e PTRE_ACTIVITY
+const CHANNEL_NAME = process.env.CHANNEL_NAME || 'scaner-ptre';
 
-const PLAYERS_XML = 'https://s273-en.ogame.gameforge.com/api/players.xml';
+// Team key do PTRE
+const PTRE_TEAM_KEY = process.env.PTRE_TEAM_KEY || 'TM-J8DN-RKYM-01TN-BETS';
+
+// Universo correto: Regulus.en / s273-en
+const COUNTRY = process.env.PTRE_COUNTRY || 'en';
+const UNIVERSE = process.env.PTRE_UNIVERSE || '273';
+
+const VERSION = process.env.PTRE_VERSION || '5.2.2';
+
+// players.xml correto do universo s273-en
+const PLAYERS_XML = process.env.PLAYERS_XML || 'https://s273-en.ogame.gameforge.com/api/players.xml';
 
 let players = {};
 let playersLoaded = false;
 
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
+  console.log(`Canal monitorado: ${CHANNEL_NAME}`);
+  console.log(`PTRE universo: ${COUNTRY}-${UNIVERSE}`);
+  console.log(`Players XML: ${PLAYERS_XML}`);
   await loadPlayers();
 });
 
@@ -31,6 +41,11 @@ async function loadPlayers() {
     console.log('Baixando players.xml...');
 
     const res = await fetch(PLAYERS_XML);
+
+    if (!res.ok) {
+      throw new Error(`Erro HTTP ao baixar players.xml: ${res.status}`);
+    }
+
     const xml = await res.text();
 
     const regex = /<player id="(\d+)" name="([^"]+)"/g;
@@ -49,7 +64,7 @@ async function loadPlayers() {
     console.log(`Players carregados: ${Object.keys(players).length}`);
   } catch (e) {
     playersLoaded = false;
-    console.error('Erro players.xml', e);
+    console.error('Erro players.xml:', e);
   }
 }
 
@@ -62,7 +77,10 @@ function activityValue(v) {
 
   if (isNaN(n)) return 60;
   if (n <= 0) return 60;
+
+  // O PTRE/OGLight aceita "*" para atividade recente
   if (n > 0 && n <= 15) return '*';
+
   if (n > 60) return 60;
 
   return n;
@@ -89,10 +107,16 @@ function buildPayload(content) {
   for (const rawLine of lines) {
     const line = rawLine.trim();
 
-    if (!line.startsWith('PTRE_ACTIVITY|') && !line.startsWith('PTRE_SCAN|')) continue;
+    if (!line.startsWith('PTRE_ACTIVITY|') && !line.startsWith('PTRE_SCAN|')) {
+      continue;
+    }
 
     const parts = line.split('|');
-    if (parts.length < 7) continue;
+
+    if (parts.length < 7) {
+      console.log(`Linha PTRE inválida: ${line}`);
+      continue;
+    }
 
     const playerNameRaw = parts[1].trim();
     const playerName = cleanPlayerName(playerNameRaw);
@@ -118,6 +142,11 @@ function buildPayload(content) {
 
     if (!galaxy || !system || !position) {
       console.log(`Coord inválida: ${coord}`);
+      continue;
+    }
+
+    if (!planetID || isNaN(planetID)) {
+      console.log(`Planet ID inválido para ${playerName} em ${coord}`);
       continue;
     }
 
@@ -152,7 +181,9 @@ function buildPayload(content) {
     }
 
     if (type === 'moon') {
-      if (moonID <= 0) continue;
+      if (moonID <= 0) {
+        continue;
+      }
 
       if (!payload[coord].moon) {
         payload[coord].moon = {
@@ -176,17 +207,20 @@ async function sendToPtre(payload) {
   const url =
     `https://ptre.chez.gg/scripts/oglight_import_player_activity.php` +
     `?tool=oglight` +
-    `&team_key=${PTRE_TEAM_KEY}` +
-    `&country=${COUNTRY}` +
-    `&univers=${UNIVERSE}` +
-    `&version=${VERSION}`;
+    `&team_key=${encodeURIComponent(PTRE_TEAM_KEY)}` +
+    `&country=${encodeURIComponent(COUNTRY)}` +
+    `&univers=${encodeURIComponent(UNIVERSE)}` +
+    `&version=${encodeURIComponent(VERSION)}`;
 
   const total = Object.keys(payload).length;
-  const debrisCount = Object.values(payload).filter(p => p.cdr_total_size && p.cdr_total_size > 0).length;
+  const debrisCount = Object.values(payload).filter(
+    p => p.cdr_total_size && p.cdr_total_size > 0
+  ).length;
 
   console.log(`Enviando ${total} entradas para o PTRE`);
   console.log(`Entradas com CDR: ${debrisCount}`);
   console.log(`Team key usada: ${PTRE_TEAM_KEY}`);
+  console.log(`Servidor PTRE usado: ${COUNTRY}-${UNIVERSE}`);
 
   const res = await fetch(url, {
     method: 'POST',
@@ -203,7 +237,11 @@ async function sendToPtre(payload) {
 
 client.on('messageCreate', async (message) => {
   try {
-    if (!playersLoaded) return;
+    if (!playersLoaded) {
+      console.log('Players ainda não carregados. Mensagem ignorada.');
+      return;
+    }
+
     if (!message.content) return;
     if (!message.channel) return;
     if (message.channel.name !== CHANNEL_NAME) return;
