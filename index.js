@@ -16,7 +16,7 @@ const COUNTRY = 'br';
 const UNIVERSE = '178';
 const VERSION = '5.2.2';
 
-const PLAYERS_XML = 'https://s178-br.ogame.gameforge.com/api/players.xml';
+const PLAYERS_XML = 'https://s273-en.ogame.gameforge.com/api/players.xml';
 
 let players = {};
 let playersLoaded = false;
