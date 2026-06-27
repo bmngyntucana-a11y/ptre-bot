@@ -13,17 +13,17 @@ const TOKEN = process.env.DISCORD_TOKEN;
 // Canal onde chegam as mensagens PTRE_SCAN e PTRE_ACTIVITY
 const CHANNEL_NAME = process.env.CHANNEL_NAME || 'scaner-ptre';
 
-// Team key do PTRE
-const PTRE_TEAM_KEY = process.env.PTRE_TEAM_KEY || 'TM-J8DN-RKYM-01TN-BETS';
+// Team key do PTRE do novo universo
+const PTRE_TEAM_KEY = process.env.PTRE_TEAM_KEY || 'TM-A7KY-ZRDW-TPZW-5JSU';
 
-// Universo correto: Regulus.en / s273-en
+// Universo correto: s275-en
 const COUNTRY = process.env.PTRE_COUNTRY || 'en';
-const UNIVERSE = process.env.PTRE_UNIVERSE || '273';
+const UNIVERSE = process.env.PTRE_UNIVERSE || '275';
 
 const VERSION = process.env.PTRE_VERSION || '5.2.2';
 
-// players.xml correto do universo s273-en
-const PLAYERS_XML = process.env.PLAYERS_XML || 'https://s273-en.ogame.gameforge.com/api/players.xml';
+// players.xml correto do universo s275-en
+const PLAYERS_XML = process.env.PLAYERS_XML || 'https://s275-en.ogame.gameforge.com/api/players.xml';
 
 let players = {};
 let playersLoaded = false;
