@@ -1,270 +1,164 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-
-// Canal onde chegam as mensagens PTRE_SCAN e PTRE_ACTIVITY
 const CHANNEL_NAME = process.env.CHANNEL_NAME || 'scaner-ptre';
-
-// Team key do PTRE do novo universo
-const PTRE_TEAM_KEY = process.env.PTRE_TEAM_KEY || 'TM-A7KY-ZRDW-TPZW-5JSU';
-
-// Universo correto: s275-en
+const PTRE_TEAM_KEY = process.env.PTRE_TEAM_KEY;
 const COUNTRY = process.env.PTRE_COUNTRY || 'en';
-const UNIVERSE = process.env.PTRE_UNIVERSE || '275';
-
+const UNIVERSE = process.env.PTRE_UNIVERSE || '277';
 const VERSION = process.env.PTRE_VERSION || '5.2.2';
+const PLAYERS_XML = process.env.PLAYERS_XML || 'https://s277-en.ogame.gameforge.com/api/players.xml';
+const PTRE_ENDPOINT = 'https://ptre.chez.gg/scripts/oglight_import_player_activity.php';
 
-// players.xml correto do universo s275-en
-const PLAYERS_XML = process.env.PLAYERS_XML || 'https://s275-en.ogame.gameforge.com/api/players.xml';
+if (!TOKEN) throw new Error('Configure DISCORD_TOKEN no Railway.');
+if (!PTRE_TEAM_KEY) throw new Error('Configure PTRE_TEAM_KEY no Railway.');
 
-let players = {};
+let players = new Map();
 let playersLoaded = false;
 
-client.once('ready', async () => {
-  console.log(`Bot online: ${client.user.tag}`);
-  console.log(`Canal monitorado: ${CHANNEL_NAME}`);
-  console.log(`PTRE universo: ${COUNTRY}-${UNIVERSE}`);
-  console.log(`Players XML: ${PLAYERS_XML}`);
-  await loadPlayers();
-});
+function decodeXmlEntities(s) {
+  return s.replace(/&(?:amp|quot|apos|lt|gt|#\d+|#x[0-9a-f]+);/gi, entity => {
+    const named = { '&amp;': '&', '&quot;': '"', '&apos;': "'", '&lt;': '<', '&gt;': '>' };
+    if (named[entity.toLowerCase()]) return named[entity.toLowerCase()];
+    if (/^&#x/i.test(entity)) return String.fromCodePoint(parseInt(entity.slice(3, -1), 16));
+    if (/^&#/.test(entity)) return String.fromCodePoint(parseInt(entity.slice(2, -1), 10));
+    return entity;
+  });
+}
 
 async function loadPlayers() {
   try {
-    console.log('Baixando players.xml...');
-
-    const res = await fetch(PLAYERS_XML);
-
-    if (!res.ok) {
-      throw new Error(`Erro HTTP ao baixar players.xml: ${res.status}`);
+    const response = await fetch(PLAYERS_XML, { signal: AbortSignal.timeout(30000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const xml = await response.text();
+    const next = new Map();
+    for (const tag of xml.matchAll(/<player\b[^>]*\/?\s*>/g)) {
+      const attrs = {};
+      for (const m of tag[0].matchAll(/([\w:-]+)\s*=\s*(["'])(.*?)\2/g)) {
+        attrs[m[1]] = decodeXmlEntities(m[3]);
+      }
+      if (/^\d+$/.test(attrs.id || '') && attrs.name) {
+        next.set(attrs.name.trim().toLowerCase(), Number(attrs.id));
+      }
     }
-
-    const xml = await res.text();
-
-    const regex = /<player id="(\d+)" name="([^"]+)"/g;
-    let match;
-
-    players = {};
-
-    while ((match = regex.exec(xml)) !== null) {
-      const id = parseInt(match[1], 10);
-      const name = match[2];
-
-      players[name.toLowerCase()] = id;
-    }
-
+    if (next.size === 0) throw new Error('Nenhum jogador encontrado no XML');
+    players = next;
     playersLoaded = true;
-    console.log(`Players carregados: ${Object.keys(players).length}`);
-  } catch (e) {
-    playersLoaded = false;
-    console.error('Erro players.xml:', e);
+    console.log(`Jogadores carregados: ${players.size} (${COUNTRY}-${UNIVERSE})`);
+  } catch (error) {
+    console.error('Falha ao atualizar players.xml:', error);
+    // Mantém o último mapa válido, caso a API falhe temporariamente.
   }
 }
 
-function cleanPlayerName(rawName) {
-  return rawName.replace(/\s*\(\d+\)\s*$/g, '').trim();
+function cleanPlayerName(raw) {
+  return raw.replace(/\s*\(\d+\)\s*$/g, '').trim();
 }
 
-function activityValue(v) {
-  const n = parseInt(v, 10);
-
-  if (isNaN(n)) return 60;
-  if (n <= 0) return 60;
-
-  // O PTRE/OGLight aceita "*" para atividade recente
-  if (n > 0 && n <= 15) return '*';
-
-  if (n > 60) return 60;
-
-  return n;
+function activityValue(value) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n <= 0) return 60;
+  if (n <= 15) return '*';
+  return Math.min(n, 60);
 }
 
 function extractCdr(parts) {
-  const cdrIndex = parts.indexOf('cdr');
-
-  if (cdrIndex === -1) return 0;
-  if (!parts[cdrIndex + 1]) return 0;
-
-  const cdr = parseInt(parts[cdrIndex + 1], 10);
-
-  if (isNaN(cdr)) return 0;
-  if (cdr < 0) return 0;
-
-  return cdr;
+  const index = parts.indexOf('cdr');
+  if (index < 0) return 0;
+  const value = Number.parseInt(parts[index + 1], 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function buildPayload(content) {
-  const lines = content.split('\n');
   const payload = {};
-
-  for (const rawLine of lines) {
+  for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
-
-    if (!line.startsWith('PTRE_ACTIVITY|') && !line.startsWith('PTRE_SCAN|')) {
-      continue;
-    }
-
+    if (!line.startsWith('PTRE_ACTIVITY|') && !line.startsWith('PTRE_SCAN|')) continue;
     const parts = line.split('|');
-
     if (parts.length < 7) {
-      console.log(`Linha PTRE inválida: ${line}`);
+      console.warn('Linha PTRE incompleta:', line);
       continue;
     }
-
-    const playerNameRaw = parts[1].trim();
-    const playerName = cleanPlayerName(playerNameRaw);
-
-    const coord = parts[2].trim();
-    const type = parts[3].trim();
-
-    const activity = activityValue(parts[4]);
-
-    const planetID = parseInt(parts[5], 10);
-    const moonID = parseInt(parts[6], 10);
-
-    const cdrTotalSize = extractCdr(parts);
-
-    const playerID = players[playerName.toLowerCase()];
-
+    const name = cleanPlayerName(parts[1]);
+    const playerID = players.get(name.toLowerCase());
     if (!playerID) {
-      console.log(`Player não encontrado: ${playerName}`);
+      console.warn('Jogador não localizado na API:', name);
       continue;
     }
-
-    const [galaxy, system, position] = coord.split(':').map(Number);
-
-    if (!galaxy || !system || !position) {
-      console.log(`Coord inválida: ${coord}`);
+    const coord = parts[2].trim();
+    const type = parts[3].trim().toLowerCase();
+    const activity = activityValue(parts[4]);
+    const planetID = Number.parseInt(parts[5], 10);
+    const moonID = Number.parseInt(parts[6], 10) || 0;
+    const cdr = extractCdr(parts);
+    const coordinates = coord.match(/^(\d+):(\d+):(\d+)$/);
+    if (!coordinates || !Number.isInteger(planetID) || planetID <= 0) {
+      console.warn('Coordenada ou ID de planeta inválido:', coord, name);
       continue;
     }
-
-    if (!planetID || isNaN(planetID)) {
-      console.log(`Planet ID inválido para ${playerName} em ${coord}`);
-      continue;
-    }
-
+    if (type !== 'planet' && type !== 'moon') continue;
+    const [, g, s, p] = coordinates;
     if (!payload[coord]) {
       payload[coord] = {
-        id: planetID,
-        player_id: playerID,
-        teamkey: PTRE_TEAM_KEY,
-        mv: false,
-        activity: 60,
-        galaxy,
-        system,
-        position,
-        main: false,
-        cdr_total_size: cdrTotalSize
+        id: planetID, player_id: playerID, teamkey: PTRE_TEAM_KEY,
+        mv: false, activity: 60, galaxy: Number(g), system: Number(s),
+        position: Number(p), main: false, cdr_total_size: cdr
       };
-
-      if (moonID > 0) {
-        payload[coord].moon = {
-          id: moonID,
-          activity: 60
-        };
-      }
+      if (moonID > 0) payload[coord].moon = { id: moonID, activity: 60 };
     }
-
-    if (cdrTotalSize > payload[coord].cdr_total_size) {
-      payload[coord].cdr_total_size = cdrTotalSize;
-    }
-
-    if (type === 'planet') {
-      payload[coord].activity = activity;
-    }
-
-    if (type === 'moon') {
-      if (moonID <= 0) {
-        continue;
-      }
-
-      if (!payload[coord].moon) {
-        payload[coord].moon = {
-          id: moonID,
-          activity: 60
-        };
-      }
-
-      payload[coord].moon.activity = activity;
-    }
-
-    if (cdrTotalSize > 0) {
-      console.log(`CDR detectado: ${coord} = ${cdrTotalSize}`);
+    const entry = payload[coord];
+    entry.cdr_total_size = Math.max(entry.cdr_total_size, cdr);
+    if (type === 'planet') entry.activity = activity;
+    if (type === 'moon' && moonID > 0) {
+      if (!entry.moon) entry.moon = { id: moonID, activity: 60 };
+      entry.moon.activity = activity;
     }
   }
-
   return payload;
 }
 
 async function sendToPtre(payload) {
-  const url =
-    `https://ptre.chez.gg/scripts/oglight_import_player_activity.php` +
-    `?tool=oglight` +
-    `&team_key=${encodeURIComponent(PTRE_TEAM_KEY)}` +
-    `&country=${encodeURIComponent(COUNTRY)}` +
-    `&univers=${encodeURIComponent(UNIVERSE)}` +
-    `&version=${encodeURIComponent(VERSION)}`;
-
+  const url = new URL(PTRE_ENDPOINT);
+  url.searchParams.set('tool', 'oglight');
+  url.searchParams.set('team_key', PTRE_TEAM_KEY);
+  url.searchParams.set('country', COUNTRY);
+  url.searchParams.set('univers', UNIVERSE);
+  url.searchParams.set('version', VERSION);
   const total = Object.keys(payload).length;
-  const debrisCount = Object.values(payload).filter(
-    p => p.cdr_total_size && p.cdr_total_size > 0
-  ).length;
-
-  console.log(`Enviando ${total} entradas para o PTRE`);
-  console.log(`Entradas com CDR: ${debrisCount}`);
-  console.log(`Team key usada: ${PTRE_TEAM_KEY}`);
-  console.log(`Servidor PTRE usado: ${COUNTRY}-${UNIVERSE}`);
-
-  const res = await fetch(url, {
+  console.log(`Enviando ${total} entradas ao PTRE (${COUNTRY}-${UNIVERSE})`);
+  const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000)
   });
-
-  const txt = await res.text();
-
-  console.log(`Resposta PTRE: ${txt}`);
+  const body = await response.text();
+  if (!response.ok) throw new Error(`PTRE HTTP ${response.status}: ${body.slice(0, 500)}`);
+  console.log(`Resposta PTRE: ${body.slice(0, 500)}`);
 }
 
-client.on('messageCreate', async (message) => {
+client.once('ready', async () => {
+  console.log(`Discord conectado: ${client.user.tag}`);
+  console.log(`Canal: ${CHANNEL_NAME}; universo: ${COUNTRY}-${UNIVERSE}`);
+  await loadPlayers();
+  setInterval(loadPlayers, 6 * 60 * 60 * 1000).unref();
+});
+
+client.on('messageCreate', async message => {
   try {
-    if (!playersLoaded) {
-      console.log('Players ainda não carregados. Mensagem ignorada.');
-      return;
-    }
-
-    if (!message.content) return;
-    if (!message.channel) return;
+    if (!playersLoaded || !message.content || !message.channel) return;
+    if (message.author?.bot && message.author.id === client.user?.id) return;
     if (message.channel.name !== CHANNEL_NAME) return;
-    if (message.author && message.author.id === client.user.id) return;
-
-    if (
-      !message.content.includes('PTRE_ACTIVITY|') &&
-      !message.content.includes('PTRE_SCAN|')
-    ) {
-      return;
-    }
-
+    if (!message.content.includes('PTRE_ACTIVITY|') && !message.content.includes('PTRE_SCAN|')) return;
     const payload = buildPayload(message.content);
-    const total = Object.keys(payload).length;
-
-    console.log(`Relatório recebido: ${total}`);
-
-    if (total <= 0) return;
-
+    if (Object.keys(payload).length === 0) return;
     await sendToPtre(payload);
-  } catch (e) {
-    console.error('ERRO GERAL:', e);
+  } catch (error) {
+    console.error('Erro ao processar mensagem:', error);
   }
 });
 
-client.login(TOKEN);
+await client.login(TOKEN);
