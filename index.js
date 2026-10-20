@@ -3,8 +3,11 @@
  * Arquivo para o GitHub: index.js (Node.js 18+ / discord.js v14)
  *
  * O Kepler envia linhas PTRE_SCAN|... ou PTRE_ACTIVITY|... ao Discord.
- * Este bot identifica o universo PELO CANAL, resolve o ID do jogador
- * no players.xml daquele universo e encaminha as atividades ao PTRE.
+ * Este bot aceita os DOIS universos no MESMO canal Discord.
+ * Mensagens antigas sem etiqueta continuam indo para Veritate EN 277.
+ * Novas mensagens podem indicar o universo no segundo campo:
+ * PTRE_ACTIVITY|br-182|Jogador|1:100:5|planet|15|123456|0
+ * O bot resolve o jogador no players.xml correto e envia ao PTRE.
  *
  * Não coloque o token Discord ou a chave PTRE neste arquivo.
  * Configure-os nas variáveis privadas do Railway.
@@ -20,8 +23,8 @@ const REFRESH_MS = 6 * 60 * 60 * 1000;
 if (!TOKEN) throw new Error('Configure DISCORD_TOKEN no Railway.');
 if (!TEAM_KEY) throw new Error('Configure PTRE_TEAM_KEY no Railway.');
 
-// MANTER as variáveis atuais do Veritate: elas já estão no Railway.
-// Dione usa um segundo canal Discord e sua própria API de jogadores.
+// Mantém as variáveis do Veritate já cadastradas no Railway.
+// O Dione pode usar o mesmo canal (linhas marcadas br-182) ou um canal exclusivo.
 const servers = [
   {
     label: 'Veritate EN',
@@ -50,17 +53,9 @@ const servers = [
   }
 ];
 
-// Impede, por engano, o envio dos dois universos para o mesmo canal.
-const seenChannels = new Set();
-for (const server of servers) {
-  const channelKey = server.channelId
-    ? `id:${server.channelId}`
-    : `name:${server.channelName.trim().toLowerCase()}`;
-  if (seenChannels.has(channelKey)) {
-    throw new Error('Os dois universos não podem usar o mesmo canal Discord.');
-  }
-  seenChannels.add(channelKey);
-}
+// No canal compartilhado, o universo e identificado pelo prefixo da linha.
+// Se a linha NAO tiver prefixo, preservamos o comportamento anterior: en-277.
+const serverByTag = new Map(servers.map(s => [`${s.country}-${s.universe}`, s]));
 
 const client = new Client({
   intents: [
@@ -124,17 +119,40 @@ async function loadPlayers(server) {
   }
 }
 
-function findServerByChannel(channel) {
-  if (!channel) return null;
-  for (const server of servers) {
-    if (server.channelId && channel.id === server.channelId) return server;
-  }
-  for (const server of servers) {
-    if (!server.channelId && normalizeName(channel.name || '') === normalizeName(server.channelName)) {
-      return server;
-    }
-  }
+function matchesChannel(channel, name, id) {
+  if (!channel) return false;
+  if (id) return channel.id === id;
+  return normalizeName(channel.name || '') === normalizeName(name);
+}
+
+function defaultServerForChannel(channel) {
+  // Primeiro, o canal compartilhado (default: Veritate).
+  if (matchesChannel(channel, servers[0].channelName, servers[0].channelId)) return servers[0];
+  // Mantem suporte ao canal exclusivo do Dione, caso ja tenha sido criado.
+  if (matchesChannel(channel, servers[1].channelName, servers[1].channelId)) return servers[1];
   return null;
+}
+
+// Normaliza uma linha PTRE, removendo o campo opcional de universo.
+// Ex.: PTRE_ACTIVITY|br-182|Nome|1:2:3|planet|15|123|0
+// vira PTRE_ACTIVITY|Nome|1:2:3|planet|15|123|0.
+function routeLine(line, defaultServer) {
+  const parts = line.trim().split('|');
+  if (parts[0] !== 'PTRE_SCAN' && parts[0] !== 'PTRE_ACTIVITY') return null;
+  if (parts.length < 7) return null;
+
+  let server = defaultServer;
+  const field = String(parts[1] || '').trim().toLowerCase();
+  if (/^[a-z]{2}-\d+$/.test(field)) {
+    server = serverByTag.get(field);
+    if (!server) {
+      console.warn(`Identificador de universo desconhecido: ${field} (linha ignorada)`);
+      return null;
+    }
+    parts.splice(1, 1);
+  }
+  if (parts.length < 7) return null;
+  return { server, line: parts.join('|') };
 }
 
 function parseActivity(value) {
@@ -253,21 +271,31 @@ client.on(Events.MessageCreate, async message => {
     if (!message.content || !message.channel) return;
     if (message.author?.id === client.user?.id) return;
 
-    const server = findServerByChannel(message.channel);
-    if (!server) return;
-    if (!message.content.includes('PTRE_SCAN|') && !message.content.includes('PTRE_ACTIVITY|')) return;
+    // So processa mensagens vindas de um canal autorizado.
+    const defaultServer = defaultServerForChannel(message.channel);
+    if (!defaultServer) return;
+    if (!message.content.includes('PTRE_SCAN|') &&
+        !message.content.includes('PTRE_ACTIVITY|')) return;
 
-    if (!server.loaded) {
-      console.warn(`[${server.country}-${server.universe}] API de jogadores ainda indisponível`);
-      return;
+    const linesByServer = new Map();
+    for (const rawLine of message.content.split(/\r?\n/)) {
+      const routed = routeLine(rawLine, defaultServer);
+      if (!routed) continue;
+      if (!linesByServer.has(routed.server)) linesByServer.set(routed.server, []);
+      linesByServer.get(routed.server).push(routed.line);
     }
 
-    const { payload, ignored } = buildPayload(message.content, server);
-    const total = Object.keys(payload).length;
-    if (ignored) console.warn(`[${server.country}-${server.universe}] ${ignored} linhas ignoradas`);
-    if (total === 0) return;
-
-    await sendToPtre(payload, server);
+    // Um mesmo post no Discord pode conter lotes de dois universos diferentes.
+    for (const [server, lines] of linesByServer) {
+      if (!server.loaded) {
+        console.warn(`[${server.country}-${server.universe}] API de jogadores ainda indisponivel`);
+        continue;
+      }
+      const { payload, ignored } = buildPayload(lines.join('\n'), server);
+      const total = Object.keys(payload).length;
+      if (ignored) console.warn(`[${server.country}-${server.universe}] ${ignored} linhas ignoradas`);
+      if (total > 0) await sendToPtre(payload, server);
+    }
   } catch (error) {
     console.error(`Erro ao processar mensagem Discord: ${error.message}`);
   }
